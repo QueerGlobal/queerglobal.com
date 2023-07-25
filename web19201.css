@@ -2,7 +2,6 @@
 
       html {
         height: 100%;
-        width: 100%;
       }
 
       body {
@@ -42,7 +41,7 @@
       overflow-x: auto;
       overflow-y: auto;
       background-color: rgba(255, 255, 255, 1);
-      width: 1920.00px;
+     width: 100%;
     height: 2662.00px;
     left: 0px;
     top: 0px;
@@ -90,7 +89,7 @@
       border-bottom-left-radius: 0.00px;
       border-bottom-right-radius: 0.00px;
       box-shadow: none;
-      width: 821.00px;
+      width: 43%;
     height: 815.00px;
     left: 122.00px;
     top: 360.00px;
@@ -118,7 +117,7 @@
       padding-left: 0.00px;
       fill: rgba(255, 255, 255, 0);
       box-shadow: none;
-      width: 387.00px;
+      width: 20.1%;
     height: 815.00px;
     left: 984.00px;
     top: 360.00px;
@@ -166,7 +165,7 @@
       border-bottom-left-radius: 0.00px;
       border-bottom-right-radius: 0.00px;
       box-shadow: none;
-      width: 388.00px;
+      width: 20.1%;
     height: 392.00px;
     left: 1409.00px;
     top: 783.00px;
@@ -214,7 +213,7 @@
       border-bottom-left-radius: 0.00px;
       border-bottom-right-radius: 0.00px;
       box-shadow: none;
-      width: 384.00px;
+      width: 20%;
     height: 821.00px;
     left: 122.00px;
     top: 1216.00px;
@@ -249,7 +248,7 @@
       overflow-x: unset;
       overflow-y: unset;
       background-color: transparent;
-      width: 818.00px;
+      width: 43%;
     height: 390.00px;
     left: 547.00px;
     top: 1645.00px;
@@ -297,7 +296,7 @@
       border-bottom-left-radius: 0.00px;
       border-bottom-right-radius: 0.00px;
       box-shadow: none;
-      width: 829.21px;
+      width: 43%;
     height: 485.09px;
     left: 0.50px;
     top: -6.00px;
@@ -341,7 +340,7 @@
       border-bottom-left-radius: 0.00px;
       border-bottom-right-radius: 0.00px;
       box-shadow: none;
-      width: 390.00px;
+      width: 20%;
     height: 818.00px;
     left: 214.00px;
     top: -214.00px;
@@ -389,7 +388,7 @@
       border-bottom-left-radius: 0.00px;
       border-bottom-right-radius: 0.00px;
       box-shadow: none;
-      width: 388.00px;
+      width: 20%;
     height: 392.00px;
     left: 1406.00px;
     top: 1645.00px;
@@ -437,7 +436,7 @@
       border-bottom-left-radius: 0.00px;
       border-bottom-right-radius: 0.00px;
       box-shadow: none;
-      width: 813.00px;
+      width: 49%;
     height: 388.00px;
     left: 984.00px;
     top: 1216.00px;
@@ -467,7 +466,7 @@
           stroke-width: 2.00px;
           stroke-linecap: butt;
       box-shadow: none;
-      width: 1675.00px;
+      width: 87.3%;
     height: 6.00px;
     left: 122.50px;
     top: 216.00px;
@@ -498,7 +497,7 @@
       overflow-x: unset;
       overflow-y: unset;
       background-color: transparent;
-      width: 163.31px;
+      width: 8.5%;
     height: 118.97px;
     left: 137.00px;
     top: 57.03px;
@@ -529,7 +528,7 @@
           stroke-width: 1.00px;
           stroke-linecap: butt;
       box-shadow: none;
-      width: 18.07px;
+      width: 0.9%;
     height: 20.40px;
     left: -1.00px;
     top: 99.57px;
@@ -1287,7 +1286,7 @@
       overflow-x: unset;
       overflow-y: unset;
       background-color: transparent;
-      width: 1920.00px;
+     width: 100%;
     height: 488.00px;
     left: -0.00px;
     top: 2176.00px;
@@ -1318,7 +1317,7 @@
       overflow-x: unset;
       overflow-y: unset;
       background-color: transparent;
-      width: 1920.00px;
+     width: 100%;
     height: 485.12px;
     left: 0.00px;
     top: 2.88px;
@@ -1362,7 +1361,7 @@
       border-bottom-left-radius: 0.00px;
       border-bottom-right-radius: 0.00px;
       box-shadow: none;
-      width: 1919.00px;
+     width: 100%;
     height: 484.12px;
     left: -0.50px;
     top: -0.50px;
@@ -1393,7 +1392,7 @@
       overflow-x: unset;
       overflow-y: unset;
       background-color: transparent;
-      width: 1920.00px;
+     width: 100%;
     height: 463.36px;
     left: 0.00px;
     top: 15.64px;
@@ -1428,7 +1427,7 @@
       overflow-x: unset;
       overflow-y: unset;
       background-color: transparent;
-      width: 1920.00px;
+     width: 100%;
     height: 463.36px;
     left: 0.00px;
     top: 0.00px;
@@ -1503,7 +1502,7 @@
       border-bottom-left-radius: 0.00px;
       border-bottom-right-radius: 0.00px;
       box-shadow: none;
-      width: 1919.00px;
+     width: 100%;
     height: 462.36px;
     left: -0.50px;
     top: -0.50px;
@@ -2988,7 +2987,7 @@
       border-bottom-left-radius: 0.00px;
       border-bottom-right-radius: 0.00px;
       box-shadow: none;
-      width: 1919.00px;
+     width: 100%;
     height: 21.47px;
     left: -0.50px;
     top: -0.50px;
@@ -3330,7 +3329,7 @@
       border-bottom-left-radius: 0.00px;
       border-bottom-right-radius: 0.00px;
       box-shadow: none;
-      width: 388.00px;
+      width: 20.1%;
     height: 382.00px;
     left: 0.00px;
     top: 0.00px;
@@ -3370,7 +3369,7 @@
       overflow-x: unset;
       overflow-y: unset;
       white-space: pre;
-      width: 228.00px;
+      width: 11.9%;
     height: 61.00px;
     left: 59.00px;
     top: 191.00px;
@@ -3410,7 +3409,7 @@
       overflow-x: unset;
       overflow-y: unset;
       white-space: pre;
-      width: 147.00px;
+      width: 7.6%;
     height: 39.00px;
     left: 59.00px;
     top: 145.00px;
@@ -3441,7 +3440,7 @@
       overflow-x: unset;
       overflow-y: unset;
       background-color: transparent;
-      width: 396.00px;
+      width: 20.6%;
     height: 388.00px;
     left: 547.00px;
     top: 1216.00px;
@@ -3472,7 +3471,7 @@
       overflow-x: unset;
       overflow-y: unset;
       background-color: transparent;
-      width: 396.00px;
+      width: 20.6%;
     height: 388.00px;
     left: 0.00px;
     top: 0.00px;
@@ -3516,7 +3515,7 @@
       border-bottom-left-radius: 0.00px;
       border-bottom-right-radius: 0.00px;
       box-shadow: none;
-      width: 396.00px;
+      width: 20.6%;
     height: 388.00px;
     left: 0.00px;
     top: 0.00px;
@@ -3557,7 +3556,7 @@
       overflow-x: unset;
       overflow-y: unset;
       white-space: pre;
-      width: 181.00px;
+      width: 9.42%;
     height: 116.00px;
     left: 70.00px;
     top: 159.00px;
@@ -3597,7 +3596,7 @@
       overflow-x: unset;
       overflow-y: unset;
       white-space: pre;
-      width: 183.00px;
+      width: 9.5%;
     height: 39.00px;
     left: 70.00px;
     top: 110.00px;
