@@ -1,0 +1,109 @@
+/** img-carousel **/
+#imgages-carousel {
+    display: grid;
+    align-items: center;
+    justify-items: center;
+    padding: 40px 0px;
+}
+.img-carousel-container {
+    width: 800px;
+    position: relative;
+}
+.img-carousel {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    padding-bottom: 5px;
+}
+.img-carousel div {
+    flex: none;
+    scroll-snap-align: start;
+    width: 800px;
+    position: relative;
+}
+.img-carousel div img {
+    display: block;
+    width: 100%;
+    object-fit: cover;
+}
+.img-carousel div p {
+    position: absolute;
+    top: 0;
+    right: 10px;
+    background: rgba(0,0,0,0.5);
+    color: #fff;
+    padding: 5px;
+    border-radius: 10px;
+}
+
+.img-carousel-container button {
+    position: absolute;
+    top: calc(50% - 15px);
+    transform: translateY(-50%);
+    border: none;
+    background-color: rgba(255, 193, 7, 0.7);
+    color: #000;
+    cursor: pointer;
+    padding: 10px 15px;
+    border-radius: 50%;
+    outline: none;
+    opacity: 0;
+    transition: all ease-in-out 0.5s;
+}
+#prev {
+    left: 10px;
+}
+#next {
+    right: 10px;
+}
+.img-carousel-container:hover button {
+    opacity: 1;
+}
+.img-carousel-container button:hover {
+    background-color: #ffc107;
+}
+
+/** custom scrollbar **/
+.img-carousel::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+.img-carousel::-webkit-scrollbar-thumb {
+    background: #ffc107;
+    border-radius: 10px;
+    visibility: hidden;
+}
+.img-carousel::-webkit-scrollbar-track {
+    background: transparent;
+}
+.img-carousel-container:hover .img-carousel::-webkit-scrollbar-thumb {
+    visibility: visible;
+}
+
+@media screen and (max-width: 800px) {
+    .img-carousel-container {
+        width: 100%;
+    }
+    .img-carousel div  {
+        width: 100%;
+    }
+}
+
+
+
+.myvideo {
+  text-decoration: none;
+  color: #fff;
+  background: red;
+  text-align: center;
+  padding: 10px;
+  font-weight: 600;
+  z-index:100;
+  position: absolute;
+  bottom: 0px;
+}
+.myvideo:hover {
+  color: #000;
+}
