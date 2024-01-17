@@ -1,0 +1,43 @@
+.section {
+ /* padding: 1rem 0; */
+ margin: 1rem;
+}
+
+.section-header {
+  font-size: 3rem;
+  color: black;
+  text-align: center;
+  margin: 1rem;
+}
+
+.container {
+  max-width: 1180px;
+  text-align: center;
+  margin: 0 auto;
+  padding: 1rem 1.5rem;
+  background: white;
+  border-radius: .5rem;
+}
+
+.lead {
+  font-size: 1.3rem;
+  line-height: 1.75rem;
+  color: black;
+}
+
+.mission-text-container{
+  display: flex;
+  flex-direction: column;
+line-height: 2rem;
+}
+
+img,  embed {
+  width: 100%;
+  height: auto;
+}
+
+
+@media only screen and (max-width: 1000px) {
+
+
+}

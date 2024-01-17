@@ -1,0 +1,48 @@
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;700&display=swap');
+
+*{
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  /* border: .1rem solid black; */
+}
+
+
+
+body{
+font-family: 'Open Sans', sans-serif;
+padding: 0;
+margin: 0;
+display: block;
+display: flex;
+min-height: 100vh;
+flex-direction: column;
+
+}
+
+/* body {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+} */
+
+
+#main {
+  flex: 1;
+}
+
+
+.about-main , .resources-main, .blog-main , .contact-main, .donate-main{
+  margin: auto;
+  margin-top: 3rem;
+  width: 90%;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.blog-post {
+ margin: auto;
+ width: 100vw;
+}
