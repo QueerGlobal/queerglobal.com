@@ -1,14 +1,11 @@
 
-#main > div , .block-container2 , .block-container3 {
- // border: .5rem solid red;
-}
 
 .top-section-container {
   margin: auto 0;
   margin-top: 5rem;
   display: flex;
   justify-content: center;
-  gap: 2.5rem;
+  gap: 1rem;
   flex-wrap: wrap;
 }
 
@@ -16,15 +13,11 @@
 margin: auto;
 display: flex;
 justify-content: center;
-//gap: 2rem;
-//flex-wrap: wrap;
+
 }
 
 .block1 {
-  width: 900px;
   width: 40vw;
- // width: 45rem;
-  height: 815px;
   height: 64.5vh;
   background-image: url("../images/man-on-couch.jpeg");
   background-size: cover;
@@ -34,8 +27,8 @@ justify-content: center;
   justify-content: center;
   align-items: center;
   text-align: center;
- // padding-left: 4.5rem;
   color: white;
+
 }
 
 .block1-header {
@@ -49,8 +42,8 @@ justify-content: center;
 
 .block1-sub-header {
   font-size: 2rem;
- // align-self: center;
-  //width: 60%;
+      font-size: calc(60% + 2vmin);
+
 }
 
 .box1-button {
@@ -81,16 +74,13 @@ justify-content: center;
 }
 
 .block3 {
-  width: 458px;
   width: 18vw;
-  height: 382px;
   height: 30vh;
   background-color: black;
   display: flex;
   flex-direction: column;
-  align-items: start;
+  align-items: center;
   justify-content: center;
-  padding-left: 3rem;
 }
 
 .block3-button , .block3-button:hover{
@@ -100,20 +90,22 @@ justify-content: center;
 
 .block3 p {
   color: white;
-  font-wight: 300;
+  font-weight: 300;
   font-style: italic;
   font-size: 1.5rem;
+
+
 }
 
 .block3 h2 {
   color: white;
   font-size: 2.5rem;
+  word-wrap: break-word;
+  font-size: calc(60% + 2.5vmin);
 }
 
 .block4 {
-  //width: 458px;
   width: 18vw;
-  height: 382px;
   height: 30vh;
   background-image: url("../images/person-in-wheelchair.avif");
   background-size: cover;
@@ -123,8 +115,6 @@ justify-content: center;
 .block5 {
   width: 477px;
   width: 18vw;
- // width: 25rem;
-  height: 826px;
   height: 66.5vh;
   background-size: cover;
   background-position: bottom center;
@@ -135,39 +125,32 @@ justify-content: center;
 
 .block-container2 {
   display: flex;
-// border: .5rem solid red;
- gap: 3rem;
- //flex-wrap: wrap;
+ gap: 2rem;
 
 }
 
 .block-container3 {
- // border: .2rem solid red;
   display: flex;
   gap: 3rem;
-  //flex-wrap: wrap;
+
 
 }
 
 .block-container-container{
   display: flex;
   flex-direction: column;
-  //border: .2rem solid red;
   gap: 3rem;
   flex-wrap: wrap;
 }
 
 .block6 {
-  width: 458px;
   width: 18vw;
-  height: 388px;
   height: 30vh;
   background-color: black;
   display: flex;
   flex-direction: column;
-  align-items: start;
+  align-items: center;
   justify-content: center;
-  padding-left: 3rem;
 }
 
 .block6-button , .block6-button:hover {
@@ -177,25 +160,26 @@ text-decoration: none;
 
 .block6 p {
   color: white;
-  font-wight: 300;
+  font-weight:  300;
   font-style: italic;
   font-size: 1.5rem;
+  word-wrap: break-word;
+  text-align: center;
 }
 
 .block6 h2 {
   color: white;
   font-size: 2.5rem;
+  font-size: calc(60% + 2.5vmin);
+  word-wrap: break-word;
 }
 
 .block7 {
-  width: 912px;
-  width: 39.5vw;
-  height: 388px;
+  width: 41vw;
   height: 30vh;
   background-image: url("../images/person-smiling.jpeg");
   background-size: cover;
   background-position: center;
-  //margin-left: 2rem;
 }
 
 .block8 {
@@ -206,7 +190,6 @@ text-decoration: none;
   background-image: url("../images/person-looking-away.jpeg");
   background-size: cover;
   background-position: center;
-//  margin-top: 2rem;
 }
 
 .block9 {
@@ -221,8 +204,7 @@ text-decoration: none;
   flex-direction: column;
   align-items: start;
   justify-content: center;
-  //padding-left: 3rem;
-//  margin-top: 2rem;
+
 }
 
 @media only screen and (max-width: 768px) {
@@ -233,12 +215,9 @@ text-decoration: none;
 
 
   .block1 {
-    // width: 1220px;
-    width: 95%;
     width: 100vw;
     background-image: url("../images/man-on-couch.jpeg") ;
     background-size: cover;
-    //background-size: 80%;
     background-position: center;
     background-repeat: no-repeat;
     display: flex;
@@ -246,7 +225,6 @@ text-decoration: none;
     justify-content: center;
     align-items: center;
     color: white;
-    //padding: 2rem;
     padding-left: 0;
     text-align: center;
   }
@@ -255,7 +233,6 @@ text-decoration: none;
     font-size: 2rem;
     text-transform: uppercase;
     margin-top: 2rem;
-   // margin-bottom: 2rem;
   }
 
   .block1-sub-header {
@@ -277,10 +254,7 @@ text-decoration: none;
   }
 
   .block3 {
-    height: 382px;
     height: 32vh;
-    //width: 1030px;
-    width: 1220px;
     width: 100vw;
     background-color: black;
     display: flex;
@@ -292,8 +266,6 @@ text-decoration: none;
   }
 
   .block4 {
-    // display: none;
-    width: 1220px;
     width: 100vw;
     height: 32vh;
     background-position: center top;
@@ -302,10 +274,9 @@ text-decoration: none;
 
 
   .block6 {
-    width: 1030px;
-    width: 1220px;
+
     width: 100vw;
-    height: 382px;
+
     height: 32vh;
     background-color: black;
     display: flex;
@@ -320,8 +291,7 @@ text-decoration: none;
 
 
   .block9 {
-    //margin: 2rem auto;
-    //width: 1030px;
+
     width: 1220px;
     width: 100vw;
     margin: 1rem  auto;

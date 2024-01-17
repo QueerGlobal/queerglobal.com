@@ -26,7 +26,7 @@ a:hover {
 }
 .ft-title {
   color: #fff;
-  font-family: "Merriweather", serif;
+  font-family: "Open Sans", serif;
   font-size: 1.375rem;
   text-transform: uppercase;
   /*   padding-bottom: 0.625rem; */
@@ -108,23 +108,23 @@ justify-content: center;
 }
 
 .fa-facebook{
-    color: darkblue;
+    color: #4267B2;
 }
 .fa-twitter{
-    color: lightblue;
+    color: 	#1DA1F2;
 }
 .fa-instagram {
-    color: orange;
+    color: #fbad50;
 }
 .fa-github {
-    color: gray;
+    color: 333;
 }
 
 .fa-linkedin {
-    color: blue;
+    color: #0077b5 ;
 }
 .fa-youtube {
-    color: red;
+    color: #FF0000;
 }
 
 

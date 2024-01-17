@@ -1,38 +1,38 @@
-/** @format */
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;700&display=swap');
 
-@import url("https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;700&display=swap");
-
-* {
+*{
   margin: 0;
   padding: 0;
   box-sizing: border-box;
-}
-body {
-  font-family: "Open Sans", sans-serif;
-  padding: 0;
-  margin: 0;
-  display: block;
-  font-size: calc(60% + 1.1vmin);
-
-  //position: relative;
-  //width: 100vw;
+  /* border: .1rem solid black; */
 }
 
-body {
+
+
+body{
+font-family: 'Open Sans', sans-serif;
+padding: 0;
+margin: 0;
+display: block;
+display: flex;
+min-height: 100vh;
+flex-direction: column;
+
+}
+
+/* body {
   display: flex;
   min-height: 100vh;
   flex-direction: column;
-}
+} */
+
 
 #main {
   flex: 1;
 }
 
-.about-main,
-.resources-main,
-.blog-main,
-.contact-main,
-.donate-main {
+
+.about-main , .resources-main, .blog-main , .contact-main, .donate-main{
   margin: auto;
   margin-top: 3rem;
   width: 90%;
@@ -43,8 +43,6 @@ body {
 }
 
 .blog-post {
-  margin: auto;
-  //height: 100%;
-  width: 100vw;
-  //width: 100%;
+ margin: auto;
+ width: 100vw;
 }
