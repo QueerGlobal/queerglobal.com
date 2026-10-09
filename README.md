@@ -2,11 +2,12 @@
 
 Coming-soon / mission page for QueerGlobal.
 
-**Public URL:** https://queerglobal.grandkru.com
+**Deploy target:** `queerglobal.grandkru.com` (Grand Kru Cloudflare). Not
+deployed yet, and not linked from anywhere public until it is reviewed and
+working.
 
-Until QueerGlobal's own DNS is in Grand Kru's hands, anything that would
-launch on `queerglobal.com` launches on `queerglobal.grandkru.com` instead.
-This Worker is that home. It is not `activism.grandkru.com/queerglobal`.
+QueerGlobal's own DNS is not in Grand Kru's hands, so work is finished on
+this Grand Kru subdomain first. It is not `activism.grandkru.com/queerglobal`.
 Do not change `queerglobal.com` DNS.
 
 The page is served from `public/`. The previous Adobe XD export lives in
@@ -61,8 +62,9 @@ other `*.grandkru.com` Workers (`activism`, `nodatacenter`, …).
 4. Do **not** point `queerglobal.com` or `www.queerglobal.com` at this
    Worker. Do **not** add `/queerglobal` on `activism-grandkru-hub`.
 
-## Moving to queerglobal.com later
+## Later
 
-When apex DNS access arrives, add `queerglobal.com` and `www.queerglobal.com`
-as additional Custom Domains on the same Worker and update the canonical URL
-in `public/index.html`. Nothing else needs to change.
+Once the page is deployed, reviewed, and working, it can be linked from
+public surfaces (org profile, repo READMEs). When apex DNS access arrives,
+add `queerglobal.com` and `www.queerglobal.com` as additional Custom Domains
+on the same Worker.
