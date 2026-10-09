@@ -1,0 +1,13 @@
+name = "queerglobal-grandkru"
+compatibility_date = "2026-10-09"
+account_id = "120d0baf442854f3f9b21e237688ae98"
+workers_dev = true
+
+# Public home: queerglobal.grandkru.com on Mark's grandkru.com zone.
+# Do not attach queerglobal.com from this Worker. Do not add hub path routes.
+[[routes]]
+pattern = "queerglobal.grandkru.com"
+custom_domain = true
+
+[assets]
+directory = "./public"

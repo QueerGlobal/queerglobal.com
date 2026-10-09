@@ -1,0 +1,13 @@
+{
+  "name": "queerglobal-grandkru",
+  "private": true,
+  "version": "1.0.0",
+  "description": "QueerGlobal coming-soon page for queerglobal.grandkru.com",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.34.0"
+  }
+}
