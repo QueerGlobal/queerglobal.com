@@ -4,12 +4,13 @@ Coming-soon / mission page for QueerGlobal.
 
 **Public URL:** https://queerglobal.grandkru.com
 
-This Worker is the public and staging home. It is not
-`activism.grandkru.com/queerglobal`. Do not change `queerglobal.com` DNS.
+Until QueerGlobal's own DNS is in Grand Kru's hands, anything that would
+launch on `queerglobal.com` launches on `queerglobal.grandkru.com` instead.
+This Worker is that home. It is not `activism.grandkru.com/queerglobal`.
+Do not change `queerglobal.com` DNS.
 
-Copy matches [PR #8](https://github.com/QueerGlobal/queerglobal.com/pull/8)
-(mission, `info@queerglobal.com`, docs + app links). The Adobe XD export at
-the repo root is not what this Worker serves — assets come from `public/`.
+The page is served from `public/`. The previous Adobe XD export lives in
+`archive/xd-export/` and is not served.
 
 The intended product app is [qg-frontend-v2](https://github.com/QueerGlobal/qg-frontend-v2).
 Contributor docs are in [qg-docs](https://github.com/QueerGlobal/qg-docs).
@@ -59,3 +60,9 @@ other `*.grandkru.com` Workers (`activism`, `nodatacenter`, …).
 
 4. Do **not** point `queerglobal.com` or `www.queerglobal.com` at this
    Worker. Do **not** add `/queerglobal` on `activism-grandkru-hub`.
+
+## Moving to queerglobal.com later
+
+When apex DNS access arrives, add `queerglobal.com` and `www.queerglobal.com`
+as additional Custom Domains on the same Worker and update the canonical URL
+in `public/index.html`. Nothing else needs to change.
