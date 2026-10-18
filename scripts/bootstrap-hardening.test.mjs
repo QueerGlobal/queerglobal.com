@@ -208,19 +208,19 @@ exit 0`,
 }
 
 describe("bootstrap-passphrase-rotate.sh promote (real script, stub tofu and doppler)", () => {
-  it("backs up, reads NEXT, sets PASSPHRASE from stdin, then deletes NEXT; no secret on argv", () => {
+  it("reads NEXT, backs up, sets PASSPHRASE from stdin, then deletes NEXT; no secret on argv", () => {
     const r = runRotate({ stdin: "rotate\npromote\n" });
     assert.equal(r.status, 0, r.stderr);
     assert.deepEqual(
       r.calls.map((c) => c.argv.split(" ").slice(0, 3).join(" ")),
       [
-        "secrets set BOOTSTRAP_STATE_ENCRYPTED",
         "secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT",
+        "secrets set BOOTSTRAP_STATE_ENCRYPTED",
         "secrets set BOOTSTRAP_STATE_PASSPHRASE",
         "secrets delete BOOTSTRAP_STATE_PASSPHRASE_NEXT",
       ],
     );
-    assert.equal(r.calls[0].stdin, '{"encrypted":"stand-in"}');
+    assert.equal(r.calls[1].stdin, '{"encrypted":"stand-in"}');
     assert.equal(r.calls[2].stdin, NEW_PASS);
     for (const c of r.calls) {
       assert.doesNotMatch(c.argv, new RegExp(`${OLD_PASS}|${NEW_PASS}`));
@@ -238,8 +238,48 @@ describe("bootstrap-passphrase-rotate.sh promote (real script, stub tofu and dop
     const r = runRotate({ stdin: "rotate\npromote\n", dopplerNext: "some-other-passphrase-22" });
     assert.equal(r.status, 1);
     assert.match(r.stderr, /does not match/);
-    assert.equal(r.calls.some((c) => c.argv.startsWith("secrets set BOOTSTRAP_STATE_PASSPHRASE ")), false);
-    assert.equal(r.calls.some((c) => c.argv.startsWith("secrets delete")), false);
+    assert.deepEqual(
+      r.calls.map((c) => c.argv.split(" ").slice(0, 3).join(" ")),
+      ["secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT"],
+      "no Doppler write (including the state backup) before NEXT matches",
+    );
+  });
+
+  it("README promote snippet checks NEXT before any Doppler write", () => {
+    const readme = fs.readFileSync("infra/bootstrap/README.md", "utf8");
+    const snippet = readme.split("Promote the new passphrase in Doppler")[1].split("```bash\n")[1].split("\n```")[0];
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "promote-"));
+    try {
+      fs.mkdirSync(path.join(work, "infra", "bootstrap"), { recursive: true });
+      fs.mkdirSync(path.join(work, "scripts"));
+      fs.copyFileSync("scripts/bootstrap-state-backup.sh", path.join(work, "scripts", "bootstrap-state-backup.sh"));
+      fs.writeFileSync(path.join(work, "infra", "bootstrap", "terraform.tfstate"), '{"encrypted":"stand-in"}');
+      const log = path.join(work, "doppler.log");
+      const doppler = stubBin(
+        "doppler",
+        `printf '%s\\n' "$*" >> "${log}"
+if [ "$2" = "set" ]; then cat >/dev/null; fi
+if [ "$2" = "get" ]; then printf '%s' "some-other-passphrase-22"; fi
+exit 0`,
+      );
+      const r = spawnSync("bash", ["-c", snippet], {
+        cwd: work,
+        env: {
+          PATH: `${doppler}:${process.env.PATH}`,
+          HOME: os.tmpdir(),
+          TF_VAR_bootstrap_state_passphrase_next: NEW_PASS,
+          TF_VAR_doppler_project: "queerglobal",
+          TF_VAR_doppler_bootstrap_config: "bootstrap",
+        },
+        encoding: "utf8",
+      });
+      assert.equal(r.status, 1);
+      assert.match(r.stderr, /does not match/);
+      const calls = fs.readFileSync(log, "utf8").trim().split("\n");
+      assert.deepEqual(calls.map((c) => c.split(" ").slice(0, 3).join(" ")), ["secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT"]);
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
   });
 
   it("fails when the old passphrase is rejected for a reason other than decryption", () => {

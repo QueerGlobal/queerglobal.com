@@ -89,15 +89,16 @@ if [ "${BOOTSTRAP_ROTATE_PROMOTE_DOPPLER:-}" = "1" ]; then
     echo "Promotion skipped. State is re-encrypted locally; back it up and promote BOOTSTRAP_STATE_PASSPHRASE_NEXT by hand." >&2
     exit 1
   fi
-  # Backup first: the Doppler backup must match the passphrase that becomes current.
-  bash "$(dirname "$0")/bootstrap-state-backup.sh" "$dir"
-  # Read NEXT first (no concurrent pipe): a failed get must never write an empty passphrase.
+  # Read and compare NEXT before any Doppler write (no concurrent pipe): a mismatch or a
+  # failed get must leave the Doppler backup and passphrase untouched.
   next_from_doppler="$(doppler secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT --plain \
     -p "$TF_VAR_doppler_project" -c "$config")"
   if [ "$next_from_doppler" != "$new" ]; then
     echo "BOOTSTRAP_STATE_PASSPHRASE_NEXT in Doppler does not match the passphrase the state was re-encrypted with; not promoting." >&2
     exit 1
   fi
+  # Back up before promoting: the Doppler backup must match the passphrase that becomes current.
+  bash "$(dirname "$0")/bootstrap-state-backup.sh" "$dir"
   printf '%s' "$next_from_doppler" | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE \
     -p "$TF_VAR_doppler_project" -c "$config"
   unset next_from_doppler
