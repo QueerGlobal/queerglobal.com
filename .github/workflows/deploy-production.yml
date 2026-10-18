@@ -276,13 +276,15 @@ jobs:
       - name: Verify release tag commit is on main
         env:
           ROLLBACK_RELEASE_TAG: ${{ inputs.rollback_release_tag }}
-        run: node scripts/validate-release-tag.mjs --verify-on-main "$ROLLBACK_RELEASE_TAG"
+        run: |
+          VERIFIED_SHA="$(node scripts/validate-release-tag.mjs --verify-on-main "$ROLLBACK_RELEASE_TAG")"
+          echo "VERIFIED_RELEASE_SHA=$VERIFIED_SHA" >> "$GITHUB_ENV"
 
-      - name: Checkout release tag
+      - name: Checkout verified release commit
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-          ref: refs/tags/${{ inputs.rollback_release_tag }}
+          ref: ${{ env.VERIFIED_RELEASE_SHA }}
 
       - name: Verify production environment is protected
         env:

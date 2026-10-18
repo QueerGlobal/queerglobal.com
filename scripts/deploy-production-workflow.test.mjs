@@ -71,9 +71,9 @@ describe("deploy-production redeploy_release_tag job", () => {
   it("checks out the release tag only after validation", () => {
     const validateIdx = stepIndex(job, "Validate release tag prefix");
     const verifyIdx = stepIndex(job, "Verify release tag commit is on main");
-    const tagCheckoutIdx = stepIndex(job, "Checkout release tag");
+    const tagCheckoutIdx = stepIndex(job, "Checkout verified release commit");
     assert.ok(validateIdx < verifyIdx, "git verify must follow prefix validation");
-    assert.ok(verifyIdx < tagCheckoutIdx, "tag checkout must follow git verify");
+    assert.ok(verifyIdx < tagCheckoutIdx, "verified commit checkout must follow git verify");
   });
 });
 
@@ -139,10 +139,18 @@ describe("deploy-production manual jobs and gating", () => {
   it("verifies the release tag commit is on main before checking the tag out", () => {
     const redeploy = extractJobBlock(yaml, "redeploy_release_tag");
     const verifyIdx = stepIndex(redeploy, "Verify release tag commit is on main");
-    const tagCheckoutIdx = stepIndex(redeploy, "Checkout release tag");
+    const tagCheckoutIdx = stepIndex(redeploy, "Checkout verified release commit");
     assert.ok(verifyIdx >= 0 && verifyIdx < tagCheckoutIdx, "tag must be verified before it is checked out");
     assert.match(redeploy, /node scripts\/validate-release-tag\.mjs --verify-on-main "\$ROLLBACK_RELEASE_TAG"/);
     assert.match(redeploy, /fetch-depth: 0/);
+  });
+
+  it("checks out the verified commit sha instead of the tag ref", () => {
+    const redeploy = extractJobBlock(yaml, "redeploy_release_tag");
+    assert.match(redeploy, /VERIFIED_SHA="\$\(node scripts\/validate-release-tag\.mjs --verify-on-main "\$ROLLBACK_RELEASE_TAG"\)"/);
+    assert.match(redeploy, /VERIFIED_RELEASE_SHA=\$VERIFIED_SHA/);
+    assert.match(redeploy, /ref: \$\{\{ env\.VERIFIED_RELEASE_SHA \}\}/);
+    assert.doesNotMatch(redeploy, /ref: refs\/tags\/\$\{\{ inputs\.rollback_release_tag \}\}/);
   });
 
   it("plans before applying infra in deploy and redeploy jobs", () => {
