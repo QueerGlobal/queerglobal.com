@@ -489,6 +489,11 @@ esac`,
     assert.match(cloudflare, /preflight-bootstrap-cloudflare\.mjs/);
   });
 
+  it("bootstrap-passphrase-rotate-run.sh never echoes loaded passphrases", () => {
+    const src = fs.readFileSync("scripts/bootstrap-passphrase-rotate-run.sh", "utf8");
+    assert.doesNotMatch(src, /echo\s+.*TF_VAR_bootstrap_state_passphrase/);
+  });
+
   it("fails when the old passphrase is rejected for a reason other than decryption", () => {
     const r = runRotate({ stdin: "rotate\npromote\n", showOutput: "Error: No value for required variable" });
     assert.equal(r.status, 1);
