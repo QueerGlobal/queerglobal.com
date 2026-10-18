@@ -67,6 +67,9 @@ function ensureSentry(options = {}) {
   Sentry.init({
     dsn,
     tracesSampleRate: 0,
+    // Client reports retry forever when the Sentry host refuses connections,
+    // which would hang a failing deploy or rollback step.
+    sendClientReports: false,
     beforeSend(event) {
       if (event.message) {
         event.message = scrubSecrets(String(event.message));

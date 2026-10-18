@@ -109,6 +109,67 @@ describe("cloudflareProbeAccountApiTokensWrite", () => {
   });
 });
 
+describe("cloudflareProbeAccountApiTokensWrite policy scope", () => {
+  const writeGroup = [{ name: "Account API Tokens Write" }];
+  const thisAccount = { [`com.cloudflare.api.account.${ACCOUNT_ID}`]: "*" };
+  const cases = [
+    {
+      name: "passes with an allow policy on this account",
+      policies: [{ effect: "allow", resources: thisAccount, permission_groups: writeGroup }],
+      ok: true,
+    },
+    {
+      name: "fails when the only matching policy is a deny",
+      policies: [{ effect: "deny", resources: thisAccount, permission_groups: writeGroup }],
+      ok: false,
+    },
+    {
+      name: "fails when the matching policy does not say allow",
+      policies: [{ resources: thisAccount, permission_groups: writeGroup }],
+      ok: false,
+    },
+    {
+      name: "fails when a deny policy overrides the allow",
+      policies: [
+        { effect: "allow", resources: thisAccount, permission_groups: writeGroup },
+        { effect: "deny", resources: thisAccount, permission_groups: writeGroup },
+      ],
+      ok: false,
+    },
+    {
+      name: "fails when the allow policy covers a different account",
+      policies: [
+        {
+          effect: "allow",
+          resources: { "com.cloudflare.api.account.ffffffffffffffffffffffffffffffff": "*" },
+          permission_groups: writeGroup,
+        },
+      ],
+      ok: false,
+    },
+  ];
+  for (const c of cases) {
+    it(c.name, async () => {
+      const fetchImpl = fetchWith((path) =>
+        path.includes("/tokens/cf-token-id")
+          ? { ok: true, json: async () => ({ success: true, result: { policies: c.policies } }) }
+          : undefined,
+      );
+      const result = await cloudflareProbeAccountApiTokensWrite({
+        token: "t",
+        accountId: ACCOUNT_ID,
+        tokenId: "cf-token-id",
+        tokenKind: "account",
+        fetchImpl,
+      });
+      assert.equal(result.ok, c.ok, JSON.stringify(result));
+      if (!c.ok) {
+        assert.match(result.error, /allow policy for Account API Tokens Write on account/);
+      }
+    });
+  }
+});
+
 describe("cloudflareVerifyActiveToken", () => {
   it("requires active status from verify", async () => {
     const fetchImpl = fetchWith((url) =>

@@ -71,6 +71,18 @@ export async function cloudflareVerifyActiveToken(input) {
 }
 
 /**
+ * True when a token policy's resources include this account (by ID or the account wildcard).
+ *
+ * @param {{ resources?: Record<string, unknown> }} policy
+ * @param {string} accountId
+ * @returns {boolean}
+ */
+function policyCoversAccount(policy, accountId) {
+  const keys = Object.keys(policy.resources ?? {});
+  return keys.includes(`com.cloudflare.api.account.${accountId}`) || keys.includes("com.cloudflare.api.account.*");
+}
+
+/**
  * @param {{
  *   token: string,
  *   accountId: string,
@@ -98,17 +110,18 @@ export async function cloudflareProbeAccountApiTokensWrite(input) {
   if (!Array.isArray(policies)) {
     return { ok: false, error: "Cloudflare token detail returned an unexpected payload." };
   }
-  const hasWrite = policies.some((policy) =>
+  const grantsWrite = (policy) =>
     (policy.permission_groups ?? []).some(
       (group) =>
         typeof group.name === "string" &&
         group.name.toLowerCase() === ACCOUNT_API_TOKENS_WRITE.toLowerCase(),
-    ),
-  );
+    ) && policyCoversAccount(policy, input.accountId);
+  const denied = policies.some((policy) => policy.effect === "deny" && grantsWrite(policy));
+  const hasWrite = !denied && policies.some((policy) => policy.effect === "allow" && grantsWrite(policy));
   if (!hasWrite) {
     return {
       ok: false,
-      error: `Cloudflare bootstrap token is missing ${ACCOUNT_API_TOKENS_WRITE} (required to create account API tokens during bootstrap apply).`,
+      error: `Cloudflare bootstrap token is missing an allow policy for ${ACCOUNT_API_TOKENS_WRITE} on account ${input.accountId} (required to create account API tokens during bootstrap apply).`,
     };
   }
   return { ok: true };

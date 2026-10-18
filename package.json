@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "check:no-em-dash": "node scripts/no-em-dash.mjs",
     "check:coming-soon": "node scripts/check-production-site.mjs",
-    "test": "node --test scripts/*.test.mjs",
+    "test": "node --test scripts/*.test.mjs scripts/lib/*.test.mjs",
     "test:e2e": "bash scripts/bootstrap-first-apply-e2e.sh && bash scripts/bootstrap-passphrase-rotation-e2e.sh && bash scripts/first-deploy-cleanup-e2e.sh",
     "terraform:fmt": "tofu fmt -recursive infra/",
     "terraform:validate": "tofu -chdir=infra init -backend=false && tofu -chdir=infra validate"

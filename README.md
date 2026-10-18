@@ -83,12 +83,16 @@ confirms `activism.grandkru.com` still does not show the coming-soon page.
 
 If the smoke test or recheck fails after a successful OpenTofu apply, the
 workflow rolls back the Worker to the version captured immediately before
-deploy (or skips Worker rollback on the first deploy when no prior Worker
-existed).
+deploy, or on the first deploy, when no prior Worker existed, removes the new
+Worker and custom domain (see below).
 
 ### Release tags and rollback
 
-Each successful deploy pushes a Git tag `release/<run>-<sha>`. To redeploy a
+Each successful deploy pushes a Git tag `release/<run>-<sha>` from a separate
+`tag_release` job, the only job with write access. Checkout never stores the
+GitHub token; `scripts/push-release-tag.sh` hands it to git through a credential
+helper that reads it from the environment, so it never appears in a URL or on a
+command line. To redeploy a
 previous release, run **Deploy production** via **Run workflow**, set
 `rollback_release_tag` to the earlier tag (for example
 `release/42-0123456789abcdef0123456789abcdef01234567`), and approve the production environment.
@@ -97,9 +101,12 @@ Manual Worker version rollback (without checking out a tag) uses the
 `rollback_version_id` workflow input with a Cloudflare Workers version UUID.
 
 **First deploy, smoke or recheck failed:** there is no previous Worker version
-to roll back to. The deploy workflow runs `scripts/run-infra-first-deploy-cleanup.sh`
-automatically (targeted destroy of the Worker and custom domain after read-only
-env checks and a saved destroy plan). Do not run `tofu destroy` by hand unless
+to roll back to. The deploy workflow runs
+`scripts/run-infra-first-deploy-cleanup.sh .previous-worker-version`
+automatically. It refuses to run unless that file holds the first-deploy marker,
+validates, saves a targeted destroy plan, checks that the plan only deletes this
+Worker and its custom domain, and only then applies that plan. Failures are
+reported to Sentry when `SENTRY_DSN` is set. Do not run `tofu destroy` by hand unless
 CI is unavailable; break-glass manual apply is documented in [infra/README.md](infra/README.md).
 
 ### Notes for running this

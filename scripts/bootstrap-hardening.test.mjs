@@ -165,6 +165,36 @@ exit 0`,
     assert.ok(fs.existsSync(backupLog), "expected backup on failed apply");
   });
 
+  it("runs the caller's EXIT trap after its own backup, with the caller's quoting intact", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "apply-trap-"));
+    const stateDir = path.join(work, "bootstrap");
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(path.join(stateDir, "terraform.tfstate"), '{"partial":true}');
+    const events = path.join(work, "events.log");
+    const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`);
+    const tofu = stubBin("tofu", "exit 0");
+    const doppler = stubBin("doppler", `cat >/dev/null; echo backup >> "${events}"`);
+    const nodeBin = path.dirname(process.execPath);
+    const r = spawnSync(
+      "bash",
+      ["-c", `trap 'echo "caller trap ran" >> "${events}"' EXIT; source scripts/bootstrap-tofu-apply.sh`],
+      {
+        env: {
+          PATH: `${node}:${tofu}:${doppler}:${nodeBin}:/usr/bin:/bin`,
+          HOME: os.tmpdir(),
+          BOOTSTRAP_FIRST_RUN: "1",
+          BOOTSTRAP_APPLY_DIR: stateDir,
+          TF_VAR_doppler_project: "queerglobal",
+          TF_VAR_doppler_bootstrap_config: "bootstrap",
+        },
+        encoding: "utf8",
+      },
+    );
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stderr, /command not found/);
+    assert.equal(fs.readFileSync(events, "utf8"), "backup\ncaller trap ran\n");
+  });
+
   it("passes -replace through to tofu apply after preflight", () => {
     const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tofu-apply-")), "argv.log");
     const tofu = stubBin("tofu", `echo "$*" >> "${log}"; exit 0`);

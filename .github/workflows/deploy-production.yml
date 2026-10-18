@@ -74,19 +74,16 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     environment: production
-    # contents: write for release tags; actions: read for environment + deployment-branch-policies REST calls
+    # actions: read for environment + deployment-branch-policies REST calls
     # (see https://docs.github.com/en/rest/deployments/environments and deployment-branch-policies)
     permissions:
-      contents: write
+      contents: read
       actions: read
-    env:
-      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          persist-credentials: true
-          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -112,12 +109,16 @@ jobs:
         uses: DopplerHQ/cli-action@014df23b1329b615816a38eb5f473bb9000700b1 # v3
 
       - name: Capture current Worker version
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
         run: |
           doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- \
             node scripts/capture-worker-version.mjs .previous-worker-version
 
       - name: OpenTofu init, plan, and apply
         id: apply
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
         run: |
           doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
             bash scripts/run-infra-tofu-apply.sh
@@ -135,28 +136,43 @@ jobs:
           node scripts/check-production-site.mjs https://queerglobal.grandkru.com
           node scripts/check-activism-unchanged.mjs https://activism.grandkru.com
 
-      - name: Tag release
-        if: success() && steps.recheck.outcome == 'success'
-        env:
-          RELEASE_TAG: release/${{ github.run_number }}-${{ github.sha }}
-        run: |
-          git config user.name "Mark Nyon"
-          git config user.email "mnyon-grandkru@users.noreply.github.com"
-          git tag "$RELEASE_TAG"
-          git push origin "$RELEASE_TAG"
-
       - name: Roll back Worker on smoke or recheck failure
         if: failure() && steps.apply.outcome == 'success' && (steps.smoke.outcome == 'failure' || steps.recheck.outcome == 'failure')
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
         run: |
-          PREVIOUS="$(tr -d '\n' < .previous-worker-version 2>/dev/null || true)"
-          if [ -z "$PREVIOUS" ] || [ "$PREVIOUS" = "__NO_PREVIOUS_WORKER__" ]; then
+          PREVIOUS="$(tr -d '\n' < .previous-worker-version)"
+          if [ -z "$PREVIOUS" ]; then
+            echo "Previous Worker version file is empty; refusing to guess between rollback and cleanup." >&2
+            exit 1
+          fi
+          if [ "$PREVIOUS" = "__NO_PREVIOUS_WORKER__" ]; then
             echo "No previous Worker version (first deploy); running automated stack cleanup."
             doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
-              bash scripts/run-infra-first-deploy-cleanup.sh
+              bash scripts/run-infra-first-deploy-cleanup.sh .previous-worker-version
           else
             doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- \
               env WORKER_NAME=queerglobal-grandkru node scripts/worker-rollback.mjs "$PREVIOUS"
           fi
+
+  tag_release:
+    if: github.event_name == 'push'
+    needs: deploy
+    runs-on: ubuntu-latest
+    # The only job that can write: it pushes one release tag after deploy and recheck succeed.
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Tag release
+        env:
+          RELEASE_TAG: release/${{ github.run_number }}-${{ github.sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/push-release-tag.sh
 
   rollback:
     if: github.event_name == 'workflow_dispatch' && inputs.rollback_version_id != ''
@@ -165,8 +181,6 @@ jobs:
     permissions:
       contents: read
       actions: read
-    env:
-      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -192,6 +206,7 @@ jobs:
 
       - name: Roll back Worker
         env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           ROLLBACK_VERSION_ID: ${{ inputs.rollback_version_id }}
         run: |
           doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- \
@@ -204,8 +219,6 @@ jobs:
     permissions:
       contents: read
       actions: read
-    env:
-      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -248,6 +261,7 @@ jobs:
 
       - name: OpenTofu init, plan, and apply from tag
         env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           ROLLBACK_RELEASE_TAG: ${{ inputs.rollback_release_tag }}
         run: |
           doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \

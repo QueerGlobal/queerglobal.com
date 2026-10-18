@@ -78,15 +78,47 @@ describe("deploy-production redeploy_release_tag job", () => {
 describe("deploy-production deploy job secrets and cleanup", () => {
   const yaml = fs.readFileSync(workflowPath, "utf8");
   const deploy = extractJobBlock(yaml, "deploy");
+  const tagRelease = extractJobBlock(yaml, "tag_release");
 
-  it("does not embed GITHUB_TOKEN in git push URLs", () => {
-    assert.doesNotMatch(deploy, /x-access-token:\$\{\{/);
-    assert.match(deploy, /git push origin "\$RELEASE_TAG"/);
+  it("never persists checkout credentials in any job", () => {
+    assert.doesNotMatch(yaml, /persist-credentials: true/);
+    const checkouts = yaml.match(/uses: actions\/checkout@/g) ?? [];
+    const notPersisted = yaml.match(/persist-credentials: false/g) ?? [];
+    assert.equal(notPersisted.length, checkouts.length, "every checkout sets persist-credentials: false");
   });
 
-  it("runs automated first-deploy cleanup instead of README-only instructions", () => {
-    assert.match(deploy, /run-infra-first-deploy-cleanup\.sh/);
+  it("gives the Doppler token only to the steps that call doppler", () => {
+    const steps = yaml.split(/\n(?=      - name: )/);
+    for (const stepText of steps) {
+      const usesDoppler = /doppler run/.test(stepText);
+      const hasToken = /DOPPLER_TOKEN: \$\{\{ secrets\.DOPPLER_TOKEN \}\}/.test(stepText);
+      if (!stepText.startsWith("      - name: ")) {
+        assert.equal(hasToken, false, "no job-level DOPPLER_TOKEN");
+        continue;
+      }
+      assert.equal(hasToken, usesDoppler, stepText.split("\n")[0]);
+    }
+  });
+
+  it("keeps write access out of the deploy job", () => {
+    assert.match(deploy, /permissions:\n\s+contents: read\n\s+actions: read/);
+    assert.doesNotMatch(deploy, /contents: write/);
+    assert.doesNotMatch(deploy, /git push/);
+  });
+
+  it("pushes the release tag from a separate job that only has contents: write and no Doppler token", () => {
+    assert.match(tagRelease, /needs: deploy/);
+    assert.match(tagRelease, /permissions:\n\s+contents: write\n\s+steps:/);
+    assert.doesNotMatch(tagRelease, /DOPPLER_TOKEN|npm ci/);
+    assert.match(tagRelease, /run: bash scripts\/push-release-tag\.sh/);
+    assert.doesNotMatch(tagRelease, /x-access-token/);
+  });
+
+  it("runs cleanup only for the exact first-deploy marker and passes the marker file to the script", () => {
+    assert.match(deploy, /if \[ "\$PREVIOUS" = "__NO_PREVIOUS_WORKER__" \]; then/);
+    assert.match(deploy, /bash scripts\/run-infra-first-deploy-cleanup\.sh \.previous-worker-version/);
     assert.doesNotMatch(deploy, /First-deploy break-glass destroy/);
+    assert.doesNotMatch(deploy, /2>\/dev\/null \|\| true\)/, "a missing version file must fail the step, not trigger cleanup");
   });
 });
 

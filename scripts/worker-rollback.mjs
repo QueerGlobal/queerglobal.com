@@ -72,6 +72,7 @@ export function isWorkerScriptNotFound(response, payload) {
  * @param {string} apiToken
  * @param {{ fetchImpl?: typeof fetch, limit?: number }} [options]
  * @returns {Promise<Array<{ id: string, versions: Array<{ version_id: string, percentage: number }> }>>}
+ *   Newest first, taken from `result.deployments` in the Cloudflare response.
  */
 export async function listWorkerDeployments(
   accountId,
@@ -95,7 +96,11 @@ export async function listWorkerDeployments(
     const msg = payload.errors?.[0]?.message ?? response.statusText;
     throw new Error(`List deployments failed: ${msg}`);
   }
-  return payload.result ?? [];
+  const deployments = payload.result?.deployments;
+  if (!Array.isArray(deployments)) {
+    throw new Error("List deployments returned an unexpected payload (missing result.deployments).");
+  }
+  return deployments;
 }
 
 /**

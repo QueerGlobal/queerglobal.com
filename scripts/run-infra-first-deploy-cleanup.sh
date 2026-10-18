@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # Targeted destroy after a failed first production deploy (Worker + custom domain only).
+# Usage: run-infra-first-deploy-cleanup.sh <previous-worker-version-file>
+# Refuses to run unless that file holds the first-deploy marker, and refuses to
+# apply a destroy plan that touches anything other than this stack's Worker and domain.
 set -euo pipefail
+
+marker_file="${1:?usage: run-infra-first-deploy-cleanup.sh <previous-worker-version-file>}"
 
 umask 077
 tmp=$(mktemp -d)
@@ -13,6 +18,13 @@ on_err() {
   node "$ROOT/scripts/report-cli-failure.mjs" "run-infra-first-deploy-cleanup" "$1" 2>/dev/null || true
 }
 trap 'on_err $LINENO' ERR
+
+previous="$(tr -d '\n' <"$marker_file")"
+if [ "$previous" != "__NO_PREVIOUS_WORKER__" ]; then
+  echo "Refusing first-deploy cleanup: $marker_file does not hold the first-deploy marker (a previous Worker version exists)." >&2
+  on_err "marker"
+  exit 1
+fi
 
 test -n "${CLOUDFLARE_API_TOKEN:-}"
 test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
@@ -42,6 +54,7 @@ tofu -chdir="$ROOT/infra" plan -destroy -input=false \
   -target=cloudflare_workers_custom_domain.coming_soon \
   -target=cloudflare_workers_script.coming_soon \
   -out="$plan"
+tofu -chdir="$ROOT/infra" show -json "$plan" | node "$ROOT/scripts/assert-first-deploy-destroy-plan.mjs"
 tofu -chdir="$ROOT/infra" apply -auto-approve -input=false "$plan"
 
 echo "OK first-deploy cleanup destroy completed (Worker and custom domain)."

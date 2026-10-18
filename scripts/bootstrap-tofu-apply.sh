@@ -2,12 +2,19 @@
 # Bootstrap apply with local state and Doppler backup (no R2 backend).
 set -euo pipefail
 
-dir="$(cd "$(dirname "$0")/.." && pwd)"
+dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bootstrap_dir="${BOOTSTRAP_APPLY_DIR:-$dir/infra/bootstrap}"
 apply_started=0
+# Keep any EXIT trap the caller already set and run it after ours. `trap -p` prints
+# `trap -- '<command>' EXIT` with shell quoting, so let the shell unquote it.
+_trap_command() {
+  eval "set -- $1"
+  printf '%s' "$3"
+}
 previous_exit_trap=""
-if saved_exit=$(trap -p EXIT 2>/dev/null); then
-  previous_exit_trap=$(printf '%s' "$saved_exit" | sed -n "s/^trap -- \(.*\) EXIT\$/\1/p")
+saved_exit="$(trap -p EXIT)"
+if [ -n "$saved_exit" ]; then
+  previous_exit_trap="$(_trap_command "$saved_exit")"
 fi
 
 _on_exit() {
@@ -29,7 +36,6 @@ set +e
 tofu -chdir="$bootstrap_dir" apply "$@"
 apply_ec=$?
 set -e
-bash "$dir/scripts/bootstrap-state-backup.sh" "$bootstrap_dir" || true
 if [ "$apply_ec" -ne 0 ]; then
   exit "$apply_ec"
 fi

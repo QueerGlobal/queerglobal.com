@@ -36,7 +36,13 @@ export function bootstrapStandInFetch() {
           success: true,
           result: {
             id: "cf-token-id",
-            policies: [{ permission_groups: [{ name: "Account API Tokens Write" }] }],
+            policies: [
+              {
+                effect: "allow",
+                resources: { [`com.cloudflare.api.account.${ACCOUNT_ID}`]: "*" },
+                permission_groups: [{ name: "Account API Tokens Write" }],
+              },
+            ],
           },
         }),
       };

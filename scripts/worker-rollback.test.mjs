@@ -54,12 +54,26 @@ describe("listWorkerDeployments", () => {
       ok: true,
       json: async () => ({
         success: true,
-        result: [{ id: "dep-1", versions: [{ version_id: "abc", percentage: 100 }] }],
+        result: { deployments: [{ id: "dep-1", versions: [{ version_id: "abc", percentage: 100 }] }] },
       }),
     });
     const result = await listWorkerDeployments("acct", "worker", "token", { fetchImpl });
     assert.equal(result.length, 1);
     assert.equal(result[0].id, "dep-1");
+  });
+
+  it("rejects the old flat result shape instead of reading deployments from it", async () => {
+    const fetchImpl = async () => ({
+      ok: true,
+      json: async () => ({
+        success: true,
+        result: [{ id: "dep-1", versions: [{ version_id: "abc", percentage: 100 }] }],
+      }),
+    });
+    await assert.rejects(
+      listWorkerDeployments("acct", "worker", "token", { fetchImpl }),
+      /missing result\.deployments/,
+    );
   });
 
   it("returns an empty list when the Worker script does not exist yet", async () => {
