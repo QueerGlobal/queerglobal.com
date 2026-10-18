@@ -2,7 +2,7 @@
 
 Creates resources that must exist before merge to `main`:
 
-- GitHub **production** environment with required reviewers ( **main** branch only)
+- GitHub **production** environment with required reviewers (main branch only)
 - GitHub environment secret **DOPPLER_TOKEN**
 - Cloudflare **R2 bucket** and scoped **R2 API token** (state backend only)
 - Cloudflare **deploy API token** (Workers on the account; routes/DNS on `grandkru.com` only)
