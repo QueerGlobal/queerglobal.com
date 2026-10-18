@@ -278,6 +278,10 @@ jobs:
           ROLLBACK_RELEASE_TAG: ${{ inputs.rollback_release_tag }}
         run: |
           VERIFIED_SHA="$(node scripts/validate-release-tag.mjs --verify-on-main "$ROLLBACK_RELEASE_TAG")"
+          if ! [[ "$VERIFIED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Release tag check did not return a full commit SHA; refusing redeploy." >&2
+            exit 1
+          fi
           echo "VERIFIED_RELEASE_SHA=$VERIFIED_SHA" >> "$GITHUB_ENV"
 
       - name: Checkout verified release commit

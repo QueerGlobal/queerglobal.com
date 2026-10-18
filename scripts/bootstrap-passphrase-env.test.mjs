@@ -5,13 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import { mkdtempTracked } from "./test-helpers/test-temp.mjs";
-
-function stubBin(name, script) {
-  const dir = mkdtempTracked("stub-");
-  fs.writeFileSync(path.join(dir, name), `#!/usr/bin/env bash\n${script}\n`, { mode: 0o755 });
-  return dir;
-}
+import { mkdtempTracked, stubBin } from "./test-helpers/test-temp.mjs";
 
 describe("bootstrap-passphrase-env.sh", () => {
   it("creates and loads a passphrase on first bootstrap without printing it", () => {

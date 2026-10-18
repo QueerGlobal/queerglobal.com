@@ -5,13 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import { mkdtempTracked } from "./test-helpers/test-temp.mjs";
-
-function stubBin(name, script) {
-  const dir = mkdtempTracked("stub-");
-  fs.writeFileSync(path.join(dir, name), `#!/usr/bin/env bash\n${script}\n`, { mode: 0o755 });
-  return dir;
-}
+import { mkdtempTracked, stubBin } from "./test-helpers/test-temp.mjs";
 
 describe("bootstrap-state-backup.sh", () => {
   it("fails when backup to Doppler fails and keeps the local state path in the message", () => {

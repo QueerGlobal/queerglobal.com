@@ -8,7 +8,7 @@ import { describe, it } from "node:test";
 import { preflightBootstrapCloudflare } from "./preflight-bootstrap-cloudflare.mjs";
 import { preflightBootstrapDopplerIsolation, runPreflightBootstrapCli } from "./preflight-bootstrap.mjs";
 import { ACCOUNT_ID, bootstrapStandInFetch, fetchWith } from "./test-helpers/fetch-stub.mjs";
-import { mkdtempTracked, rmTracked } from "./test-helpers/test-temp.mjs";
+import { mkdtempTracked, rmTracked, stubBin } from "./test-helpers/test-temp.mjs";
 
 const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 
@@ -27,12 +27,6 @@ function bootstrapTree(prepare) {
   fs.symlinkSync(path.join(REPO, "node_modules"), path.join(root, "node_modules"));
   prepare?.(root);
   return root;
-}
-
-function stubBin(name, script) {
-  const dir = mkdtempTracked("stub-");
-  fs.writeFileSync(path.join(dir, name), `#!/usr/bin/env bash\n${script}\n`, { mode: 0o755 });
-  return dir;
 }
 
 /** @param {{ backupLog?: string }} [opts] */

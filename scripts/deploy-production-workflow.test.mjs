@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, it } from "node:test";
+
+import { mkdtempTracked, rmTracked } from "./test-helpers/test-temp.mjs";
+import { workflowStepRun } from "./test-helpers/workflow-step.mjs";
 
 const workflowPath = path.join(
   process.cwd(),
@@ -151,6 +155,42 @@ describe("deploy-production manual jobs and gating", () => {
     assert.match(redeploy, /VERIFIED_RELEASE_SHA=\$VERIFIED_SHA/);
     assert.match(redeploy, /ref: \$\{\{ env\.VERIFIED_RELEASE_SHA \}\}/);
     assert.doesNotMatch(redeploy, /ref: refs\/tags\/\$\{\{ inputs\.rollback_release_tag \}\}/);
+  });
+
+  it("sets VERIFIED_RELEASE_SHA only when the tag check printed a full commit sha", () => {
+    const body = workflowStepRun(yaml, "Verify release tag commit is on main");
+    const sha = "0123456789abcdef0123456789abcdef01234567";
+    const cases = [
+      { printed: "", exit: 0, ok: false },
+      { printed: "not-a-sha", exit: 0, ok: false },
+      { printed: sha.slice(0, 39), exit: 0, ok: false },
+      { printed: sha, exit: 1, ok: false },
+      { printed: sha, exit: 0, ok: true },
+    ];
+    for (const c of cases) {
+      const work = mkdtempTracked("verify-step-");
+      try {
+        const bin = path.join(work, "bin");
+        fs.mkdirSync(bin);
+        fs.writeFileSync(path.join(bin, "node"), `#!/bin/sh\nprintf '%s\\n' '${c.printed}'\nexit ${c.exit}\n`, { mode: 0o755 });
+        const githubEnv = path.join(work, "github_env");
+        fs.writeFileSync(githubEnv, "");
+        const r = spawnSync("bash", ["-e", "-c", body], {
+          env: { PATH: `${bin}:/usr/bin:/bin`, GITHUB_ENV: githubEnv, ROLLBACK_RELEASE_TAG: `release/1-${sha}` },
+          encoding: "utf8",
+        });
+        const written = fs.readFileSync(githubEnv, "utf8");
+        if (c.ok) {
+          assert.equal(r.status, 0, r.stderr);
+          assert.equal(written, `VERIFIED_RELEASE_SHA=${sha}\n`);
+        } else {
+          assert.notEqual(r.status, 0, `printed ${JSON.stringify(c.printed)} exit ${c.exit} must refuse`);
+          assert.equal(written, "", `printed ${JSON.stringify(c.printed)} must not set VERIFIED_RELEASE_SHA`);
+        }
+      } finally {
+        rmTracked(work);
+      }
+    }
   });
 
   it("plans before applying infra in deploy and redeploy jobs", () => {

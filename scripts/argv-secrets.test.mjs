@@ -5,7 +5,9 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
+import { isolatedGitEnv } from "./test-helpers/isolated-git-env.mjs";
 import { mkdtempTracked, rmTracked } from "./test-helpers/test-temp.mjs";
+import { workflowStepRun } from "./test-helpers/workflow-step.mjs";
 
 /**
  * Runs the real deploy, rollback, cleanup, bootstrap and release tag scripts, and the
@@ -72,30 +74,6 @@ function workTree(mutate) {
 }
 
 /**
- * @param {string} yaml
- * @param {string} stepName
- * @returns {string}
- */
-function workflowStepRun(yaml, stepName) {
-  const lines = yaml.split("\n");
-  const start = lines.findIndex((l) => l.trim() === `- name: ${stepName}`);
-  assert.notEqual(start, -1, `missing workflow step ${stepName}`);
-  for (let i = start + 1; i < lines.length && !lines[i].trim().startsWith("- name:"); i += 1) {
-    const m = /^(\s*)run: ?(.*)$/.exec(lines[i]);
-    if (!m) continue;
-    if (m[2] !== "|") return m[2];
-    const body = [];
-    for (let j = i + 1; j < lines.length; j += 1) {
-      const line = lines[j];
-      if (line.trim() !== "" && line.search(/\S/) <= m[1].length) break;
-      body.push(line.slice(m[1].length + 2));
-    }
-    return body.join("\n");
-  }
-  throw new Error(`workflow step ${stepName} has no run block`);
-}
-
-/**
  * Run every script and workflow step in `root` through the shims.
  *
  * @param {string} root
@@ -106,10 +84,11 @@ function runAll(root) {
   const yaml = fs.readFileSync(path.join(root, ".github/workflows/deploy-production.yml"), "utf8");
   const remoteDir = path.join(root, "remote");
   fs.mkdirSync(remoteDir);
-  execFileSync(REAL.git, ["init", "-q", "--bare", path.join(remoteDir, "QueerGlobal/queerglobal.com.git")]);
+  const gitEnv = isolatedGitEnv(root);
+  execFileSync(REAL.git, ["init", "-q", "--bare", path.join(remoteDir, "QueerGlobal/queerglobal.com.git")], { env: gitEnv });
   const checkout = path.join(root, "checkout");
-  execFileSync(REAL.git, ["init", "-q", checkout]);
-  execFileSync(REAL.git, ["-C", checkout, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "c"]);
+  execFileSync(REAL.git, ["init", "-q", checkout], { env: gitEnv });
+  execFileSync(REAL.git, ["-C", checkout, "commit", "-q", "--allow-empty", "-m", "c"], { env: gitEnv });
   fs.writeFileSync(path.join(root, "infra", "bootstrap", "terraform.tfstate"), '{"encrypted":true}');
   fs.writeFileSync(path.join(root, "bootstrap-passphrase.txt"), BOOTSTRAP_PASSPHRASE);
   fs.mkdirSync(path.join(root, "ci-plan"), { recursive: true });
@@ -126,6 +105,7 @@ function runAll(root) {
     REAL_GIT: REAL.git,
     NODE_OPTIONS: `--import=${FETCH_PRELOAD}`,
     GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
     ...FAKES,
     CLOUDFLARE_ACCOUNT_ID: "0123456789abcdef0123456789abcdef",
     TF_STATE_BUCKET: "argv-test-bucket",

@@ -34,3 +34,16 @@ export function cleanupAllTracked() {
     rmTracked(dir);
   }
 }
+
+/**
+ * Write an executable bash stub named `name` into a new tracked directory.
+ *
+ * @param {string} name
+ * @param {string} script
+ * @returns {string} the directory, for putting first on PATH
+ */
+export function stubBin(name, script) {
+  const dir = mkdtempTracked("stub-");
+  fs.writeFileSync(path.join(dir, name), `#!/usr/bin/env bash\n${script}\n`, { mode: 0o755 });
+  return dir;
+}

@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
+import { execFileSync, spawnSync } from "node:child_process";
 import path from "node:path";
 import { describe, it } from "node:test";
 
@@ -12,6 +10,7 @@ import {
   verifyReleaseTagIsAncestorOfMain,
   verifyReleaseTagPointsAtEmbeddedSha,
 } from "./validate-release-tag.mjs";
+import { isolatedGitEnv } from "./test-helpers/isolated-git-env.mjs";
 import { mkdtempTracked, rmTracked } from "./test-helpers/test-temp.mjs";
 
 describe("assertValidReleaseTag", () => {
@@ -53,39 +52,33 @@ describe("verifyReleaseTag rollback guards", () => {
   it("refuses when the tag commit is not an ancestor of main", () => {
     const repo = mkdtempTracked("release-tag-git-");
     try {
-      execFileSync("git", ["init", "-q"], { cwd: repo, env: { ...process.env, HOME: repo, GIT_CONFIG_NOSYSTEM: "1" } });
-      execFileSync("git", ["config", "user.email", "t@t"], { cwd: repo, env: { HOME: repo, GIT_CONFIG_NOSYSTEM: "1" } });
-      execFileSync("git", ["config", "user.name", "t"], { cwd: repo, env: { HOME: repo, GIT_CONFIG_NOSYSTEM: "1" } });
-      const gitEnv = { ...process.env, HOME: repo, TMPDIR: repo, GIT_CONFIG_NOSYSTEM: "1" };
-      execFileSync("git", ["commit", "--allow-empty", "-q", "-m", "main"], {
-        cwd: repo,
-        env: gitEnv,
-      });
-      const mainSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8", env: gitEnv }).trim();
-      execFileSync("git", ["branch", "-M", "main"], { cwd: repo, env: gitEnv });
-      execFileSync("git", ["checkout", "-q", "-b", "side"], { cwd: repo, env: gitEnv });
-      execFileSync("git", ["commit", "--allow-empty", "-q", "-m", "side"], { cwd: repo, env: gitEnv });
-      const sideSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8", env: gitEnv }).trim();
-      const tag = `release/9-${sideSha}`;
-      execFileSync("git", ["tag", tag], { cwd: repo, env: gitEnv });
-      const execGit = (args) => execFileSync("git", args, { cwd: repo, encoding: "utf8", env: gitEnv });
-      verifyReleaseTagPointsAtEmbeddedSha({ tag, execGit });
+      const git = gitIn(repo);
+      git(["init", "-q"]);
+      git(["commit", "--allow-empty", "-q", "-m", "main"]);
+      const mainSha = git(["rev-parse", "HEAD"]).trim();
+      git(["branch", "-M", "main"]);
+      git(["checkout", "-q", "-b", "side"]);
+      git(["commit", "--allow-empty", "-q", "-m", "side"]);
+      const sideSha = git(["rev-parse", "HEAD"]).trim();
+      const tag = `release/1-${sideSha}`;
+      git(["tag", tag]);
+      verifyReleaseTagPointsAtEmbeddedSha({ tag, execGit: git });
       assert.throws(
         () =>
           verifyReleaseTagIsAncestorOfMain({
             tag,
-            execGit,
+            execGit: git,
             mainRef: "refs/heads/main",
             fetchOriginMain: false,
           }),
         /not an ancestor/,
       );
-      execFileSync("git", ["checkout", "-q", "main"], { cwd: repo, env: gitEnv });
+      git(["checkout", "-q", "main"]);
       const mainTag = `release/2-${mainSha}`;
-      execFileSync("git", ["tag", mainTag], { cwd: repo, env: gitEnv });
+      git(["tag", mainTag]);
       verifyReleaseTagIsAncestorOfMain({
         tag: mainTag,
-        execGit,
+        execGit: git,
         mainRef: "refs/heads/main",
         fetchOriginMain: false,
       });
@@ -97,35 +90,10 @@ describe("verifyReleaseTag rollback guards", () => {
   it("uses origin/main after fetch when no local main branch exists", () => {
     const root = mkdtempTracked("release-tag-git-");
     try {
-      const bare = path.join(root, "origin.git");
-      const clone = path.join(root, "clone");
-      const gitEnv = {
-        ...process.env,
-        HOME: root,
-        TMPDIR: root,
-        GIT_CONFIG_NOSYSTEM: "1",
-        GIT_TERMINAL_PROMPT: "0",
-      };
-      execFileSync("git", ["init", "--bare", "-q", bare], { env: gitEnv });
-      execFileSync("git", ["init", "-q", clone], { env: gitEnv });
-      execFileSync("git", ["-C", clone, "config", "user.email", "t@t"], { env: gitEnv });
-      execFileSync("git", ["-C", clone, "config", "user.name", "t"], { env: gitEnv });
-      execFileSync("git", ["-C", clone, "commit", "--allow-empty", "-q", "-m", "first"], { env: gitEnv });
-      const firstSha = execFileSync("git", ["-C", clone, "rev-parse", "HEAD"], { encoding: "utf8", env: gitEnv }).trim();
-      execFileSync("git", ["-C", clone, "commit", "--allow-empty", "-q", "-m", "second"], { env: gitEnv });
-      execFileSync("git", ["-C", clone, "branch", "-M", "main"], { env: gitEnv });
-      execFileSync("git", ["-C", clone, "remote", "add", "origin", bare], { env: gitEnv });
-      execFileSync("git", ["-C", clone, "push", "-u", "origin", "main"], { env: gitEnv });
-      const tag = `release/3-${firstSha}`;
-      execFileSync("git", ["-C", clone, "tag", tag, firstSha], { env: gitEnv });
-      execFileSync("git", ["-C", clone, "push", "origin", tag], { env: gitEnv });
-      execFileSync("git", ["-C", clone, "checkout", "--detach", "HEAD"], { env: gitEnv });
-      execFileSync("git", ["-C", clone, "branch", "-D", "main"], { env: gitEnv });
-      assert.throws(() => execFileSync("git", ["-C", clone, "rev-parse", "main"], { env: gitEnv }), /unknown revision|not a valid object name/);
-      const execGit = (args) => execFileSync("git", args, { cwd: clone, encoding: "utf8", env: gitEnv });
+      const { ci, firstSha } = runnerClone(root);
       const verified = verifyReleaseTagIsAncestorOfMain({
-        tag,
-        execGit,
+        tag: `release/3-${firstSha}`,
+        execGit: gitIn(ci),
         mainRef: "origin/main",
         fetchOriginMain: true,
       });
@@ -134,4 +102,123 @@ describe("verifyReleaseTag rollback guards", () => {
       rmTracked(root);
     }
   });
+
+  it("fetches main first, so a stale origin/main does not refuse a tag that is on main", () => {
+    const root = mkdtempTracked("release-tag-git-");
+    try {
+      const { ci, newSha } = runnerClone(root, { pushAfterClone: true });
+      const git = gitIn(ci);
+      const tag = `release/4-${newSha}`;
+      assert.throws(
+        () => verifyReleaseTagIsAncestorOfMain({ tag, execGit: git, fetchOriginMain: false }),
+        /not an ancestor/,
+        "fixture must start with a stale origin/main",
+      );
+      assert.equal(verifyReleaseTagIsAncestorOfMain({ tag, execGit: git }), newSha);
+    } finally {
+      rmTracked(root);
+    }
+  });
+
+  it("refuses when fetching main fails, even if the local origin/main would pass", () => {
+    const root = mkdtempTracked("release-tag-git-");
+    try {
+      const { ci, firstSha } = runnerClone(root);
+      const git = gitIn(ci);
+      git(["remote", "set-url", "origin", path.join(root, "missing.git")]);
+      assert.throws(() => verifyReleaseTagIsAncestorOfMain({ tag: `release/5-${firstSha}`, execGit: git }));
+    } finally {
+      rmTracked(root);
+    }
+  });
 });
+
+describe("validate-release-tag.mjs --verify-on-main", () => {
+  const script = path.join(process.cwd(), "scripts/validate-release-tag.mjs");
+
+  it("fetches main, checks origin/main and prints only the verified commit sha", () => {
+    const root = mkdtempTracked("release-tag-cli-");
+    try {
+      const { ci, newSha } = runnerClone(root, { pushAfterClone: true });
+      const r = spawnSync(process.execPath, [script, "--verify-on-main", `release/6-${newSha}`], {
+        cwd: ci,
+        env: isolatedGitEnv(root),
+        encoding: "utf8",
+      });
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(r.stdout, `${newSha}\n`);
+    } finally {
+      rmTracked(root);
+    }
+  });
+
+  it("prints nothing and exits non-zero when the tag is not on main", () => {
+    const root = mkdtempTracked("release-tag-cli-");
+    try {
+      const { ci, sideSha } = runnerClone(root, { sideTag: true });
+      const r = spawnSync(process.execPath, [script, "--verify-on-main", `release/7-${sideSha}`], {
+        cwd: ci,
+        env: isolatedGitEnv(root),
+        encoding: "utf8",
+      });
+      assert.equal(r.status, 1);
+      assert.equal(r.stdout, "");
+      assert.match(r.stderr, /not an ancestor of origin\/main/);
+    } finally {
+      rmTracked(root);
+    }
+  });
+});
+
+/**
+ * @param {string} cwd
+ * @returns {(args: string[]) => string}
+ */
+function gitIn(cwd) {
+  const env = isolatedGitEnv(cwd);
+  return (args) => execFileSync("git", args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+}
+
+/**
+ * Build an origin repo and a runner-style clone of it: release tags fetched, no local
+ * main branch, detached HEAD. With pushAfterClone, main gets a new tagged commit after
+ * the clone, so the clone's origin/main is stale until it fetches. With sideTag, a tag
+ * points at a commit that is not on main.
+ *
+ * @param {string} root
+ * @param {{ pushAfterClone?: boolean, sideTag?: boolean }} [opts]
+ */
+function runnerClone(root, opts = {}) {
+  const bare = path.join(root, "origin.git");
+  const dev = path.join(root, "dev");
+  const ci = path.join(root, "ci");
+  const git = (cwd, args) => gitIn(cwd)(args);
+  git(root, ["init", "--bare", "-q", "-b", "main", bare]);
+  git(root, ["init", "-q", "-b", "main", dev]);
+  git(dev, ["commit", "--allow-empty", "-q", "-m", "first"]);
+  const firstSha = git(dev, ["rev-parse", "HEAD"]).trim();
+  git(dev, ["tag", `release/3-${firstSha}`]);
+  git(dev, ["tag", `release/5-${firstSha}`]);
+  let sideSha = "";
+  if (opts.sideTag) {
+    git(dev, ["checkout", "-q", "-b", "side"]);
+    git(dev, ["commit", "--allow-empty", "-q", "-m", "side"]);
+    sideSha = git(dev, ["rev-parse", "HEAD"]).trim();
+    git(dev, ["tag", `release/7-${sideSha}`]);
+    git(dev, ["checkout", "-q", "main"]);
+  }
+  git(dev, ["remote", "add", "origin", bare]);
+  git(dev, ["push", "-q", "origin", "main", "--tags"]);
+  git(root, ["clone", "-q", "-b", "main", bare, ci]);
+  let newSha = "";
+  if (opts.pushAfterClone) {
+    git(dev, ["commit", "--allow-empty", "-q", "-m", "second"]);
+    newSha = git(dev, ["rev-parse", "HEAD"]).trim();
+    for (const n of [4, 6]) git(dev, ["tag", `release/${n}-${newSha}`]);
+    git(dev, ["push", "-q", "origin", "main", "--tags"]);
+    git(ci, ["fetch", "-q", "--no-tags", "origin", "refs/tags/*:refs/tags/*"]);
+  }
+  git(ci, ["checkout", "-q", "--detach", "HEAD"]);
+  git(ci, ["branch", "-D", "main"]);
+  return { ci, firstSha, newSha, sideSha };
+}
