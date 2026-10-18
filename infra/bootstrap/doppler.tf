@@ -54,9 +54,3 @@ resource "doppler_secret" "aws_secret_access_key" {
   value   = local.r2_secret_access_key
 }
 
-resource "doppler_secret" "bootstrap_tf_state_key" {
-  project = var.doppler_project
-  config  = var.doppler_config
-  name    = "BOOTSTRAP_TF_STATE_KEY"
-  value   = var.bootstrap_state_object_key
-}

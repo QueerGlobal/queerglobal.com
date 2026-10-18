@@ -123,12 +123,6 @@ variable "bootstrap_state_passphrase_previous" {
   }
 }
 
-variable "bootstrap_state_object_key" {
-  type        = string
-  description = "OpenTofu remote state object key for this bootstrap stack in R2."
-  default     = "queerglobal-grandkru/bootstrap.tfstate"
-}
-
 variable "tf_state_bucket_name" {
   type        = string
   description = "R2 bucket name for OpenTofu remote state."

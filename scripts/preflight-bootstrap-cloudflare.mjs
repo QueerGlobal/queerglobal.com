@@ -9,6 +9,13 @@ import { fileURLToPath } from "node:url";
 
 const API = "https://api.cloudflare.com/client/v4";
 
+/** @type {readonly string[]} */
+export const REQUIRED_CLOUDFLARE_PERMISSION_GROUPS = [
+  "Account API Tokens Write",
+  "Workers R2 Storage Write",
+  "Zone Read",
+];
+
 /**
  * @param {string} token
  * @param {string} pathSuffix
@@ -22,6 +29,77 @@ async function cloudflareGet(token, pathSuffix, fetchImpl) {
       "Content-Type": "application/json",
     },
   });
+}
+
+/**
+ * @param {unknown} policies
+ * @param {string} accountId
+ * @param {string} zoneId
+ * @returns {string | null}
+ */
+export function missingCloudflareBootstrapPolicies(policies, accountId, zoneId) {
+  if (!Array.isArray(policies)) {
+    return "Token has no policies.";
+  }
+
+  const accountResource = `com.cloudflare.api.account.${accountId}`;
+  const zoneResource = `com.cloudflare.api.account.zone.${zoneId}`;
+
+  /** @type {Map<string, { account: boolean, zone: boolean }>} */
+  const found = new Map(
+    REQUIRED_CLOUDFLARE_PERMISSION_GROUPS.map((name) => [name, { account: false, zone: false }]),
+  );
+
+  for (const policy of policies) {
+    if (policy?.effect !== "allow") {
+      continue;
+    }
+    const resources = policy.resources ?? {};
+    const resourceKeys = Object.keys(resources);
+    const onAccount = resourceKeys.some(
+      (key) => key === accountResource || key === "com.cloudflare.api.account.*",
+    );
+    const onZone = resourceKeys.some(
+      (key) =>
+        key === zoneResource ||
+        key === "com.cloudflare.api.account.zone.*" ||
+        key.endsWith(`.zone.${zoneId}`),
+    );
+
+    for (const group of policy.permission_groups ?? []) {
+      const name = group?.name;
+      if (typeof name !== "string" || !found.has(name)) {
+        continue;
+      }
+      const entry = found.get(name);
+      if (!entry) {
+        continue;
+      }
+      if (name === "Zone Read") {
+        if (onZone || onAccount) {
+          entry.zone = true;
+        }
+      } else if (onAccount) {
+        entry.account = true;
+      }
+    }
+  }
+
+  for (const name of REQUIRED_CLOUDFLARE_PERMISSION_GROUPS) {
+    const entry = found.get(name);
+    if (!entry) {
+      return `Missing allow policy for ${name}.`;
+    }
+    if (name === "Zone Read") {
+      if (!entry.zone) {
+        return `Zone Read must be allowed for this account and zone (grandkru.com).`;
+      }
+    } else if (!entry.account) {
+      return `${name} must be allowed for account ${accountId}.`;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -46,25 +124,45 @@ export async function preflightBootstrapCloudflare(options) {
     return { ok: false, error: "TF_VAR_cloudflare_account_id is required." };
   }
 
-  const verify = await cloudflareGet(token, "/user/tokens/verify", fetchImpl);
-  const verifyBody = await verify.json();
-  if (!verify.ok || verifyBody.success !== true) {
-    const message = verifyBody.errors?.[0]?.message ?? verify.statusText;
-    return { ok: false, error: `Cloudflare token verify failed: ${message}` };
-  }
+  let tokenKind = "user";
+  let tokenId = "";
 
-  const groups = await cloudflareGet(
+  const accountVerify = await cloudflareGet(
     token,
-    `/accounts/${accountId}/tokens/permission_groups`,
+    `/accounts/${accountId}/tokens/verify`,
     fetchImpl,
   );
-  const groupsBody = await groups.json();
-  if (!groups.ok || groupsBody.success !== true) {
-    const message = groupsBody.errors?.[0]?.message ?? groups.statusText;
-    return {
-      ok: false,
-      error: `Cloudflare token cannot list account API token permission groups (need Account API Tokens Write): ${message}`,
-    };
+  const accountVerifyBody = await accountVerify.json();
+  if (accountVerify.ok && accountVerifyBody.success === true) {
+    tokenKind = "account";
+    tokenId = accountVerifyBody.result?.id ?? "";
+  } else {
+    const userVerify = await cloudflareGet(token, "/user/tokens/verify", fetchImpl);
+    const userVerifyBody = await userVerify.json();
+    if (!userVerify.ok || userVerifyBody.success !== true) {
+      const message =
+        userVerifyBody.errors?.[0]?.message ??
+        accountVerifyBody.errors?.[0]?.message ??
+        userVerify.statusText;
+      return { ok: false, error: `Cloudflare token verify failed: ${message}` };
+    }
+    tokenKind = "user";
+    tokenId = userVerifyBody.result?.id ?? "";
+  }
+
+  if (!tokenId) {
+    return { ok: false, error: "Cloudflare token verify did not return a token id." };
+  }
+
+  const tokenPath =
+    tokenKind === "account"
+      ? `/accounts/${accountId}/tokens/${tokenId}`
+      : `/user/tokens/${tokenId}`;
+  const tokenRecord = await cloudflareGet(token, tokenPath, fetchImpl);
+  const tokenRecordBody = await tokenRecord.json();
+  if (!tokenRecord.ok || tokenRecordBody.success !== true) {
+    const message = tokenRecordBody.errors?.[0]?.message ?? tokenRecord.statusText;
+    return { ok: false, error: `Cloudflare token record fetch failed: ${message}` };
   }
 
   const zones = await cloudflareGet(
@@ -79,6 +177,19 @@ export async function preflightBootstrapCloudflare(options) {
   }
   if (!Array.isArray(zonesBody.result) || zonesBody.result.length === 0) {
     return { ok: false, error: `Zone ${zoneName} was not found in this account.` };
+  }
+  const zoneId = zonesBody.result[0]?.id;
+  if (typeof zoneId !== "string" || zoneId.length === 0) {
+    return { ok: false, error: `Zone ${zoneName} response missing zone id.` };
+  }
+
+  const policyError = missingCloudflareBootstrapPolicies(
+    tokenRecordBody.result?.policies,
+    accountId,
+    zoneId,
+  );
+  if (policyError) {
+    return { ok: false, error: policyError };
   }
 
   return { ok: true };
