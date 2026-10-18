@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  cloudflareProbeAccountApiTokensWrite,
   cloudflareProbeR2Buckets,
   cloudflareProbeZoneOnAccount,
   cloudflareVerifyActiveToken,
@@ -79,6 +80,32 @@ describe("cloudflareProbeZoneOnAccount", () => {
       throw new Error("expected failure");
     }
     assert.match(result.error, /not on account/);
+  });
+});
+
+describe("cloudflareProbeAccountApiTokensWrite", () => {
+  it("fails when Account API Tokens Write is missing from token policies", async () => {
+    const fetchImpl = fetchWith((path) => {
+      if (path.includes("/tokens/cf-token-id")) {
+        return {
+          ok: true,
+          json: async () => ({
+            success: true,
+            result: { policies: [{ permission_groups: [{ name: "Workers R2 Storage Read" }] }] },
+          }),
+        };
+      }
+      return undefined;
+    });
+    const result = await cloudflareProbeAccountApiTokensWrite({
+      token: "t",
+      accountId: ACCOUNT_ID,
+      tokenId: "cf-token-id",
+      tokenKind: "account",
+      fetchImpl,
+    });
+    assert.equal(result.ok, false);
+    assert.match(result.error, /Account API Tokens Write/);
   });
 });
 

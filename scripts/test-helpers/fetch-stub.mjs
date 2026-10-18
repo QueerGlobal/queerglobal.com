@@ -29,6 +29,18 @@ export function bootstrapStandInFetch() {
         }),
       };
     }
+    if (pathStr.includes(`/accounts/${ACCOUNT_ID}/tokens/cf-token-id`)) {
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          result: {
+            id: "cf-token-id",
+            policies: [{ permission_groups: [{ name: "Account API Tokens Write" }] }],
+          },
+        }),
+      };
+    }
     if (pathStr.includes("/user/tokens/verify")) {
       return {
         ok: true,

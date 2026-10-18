@@ -22,5 +22,5 @@ if ! command -v doppler >/dev/null 2>&1; then
   exit 1
 fi
 
-cat "$state_file" | doppler secrets set BOOTSTRAP_STATE_ENCRYPTED -p "$project" -c "$config"
+doppler secrets set BOOTSTRAP_STATE_ENCRYPTED -p "$project" -c "$config" <"$state_file"
 echo "Backed up bootstrap state to Doppler ($project/$config) as BOOTSTRAP_STATE_ENCRYPTED."

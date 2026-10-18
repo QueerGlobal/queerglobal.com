@@ -97,28 +97,10 @@ Manual Worker version rollback (without checking out a tag) uses the
 `rollback_version_id` workflow input with a Cloudflare Workers version UUID.
 
 **First deploy, smoke or recheck failed:** there is no previous Worker version
-to roll back to. Remove the new stack:
-
-```bash
-doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
-  bash -ec '
-    export TF_VAR_cloudflare_account_id="$CLOUDFLARE_ACCOUNT_ID"
-    export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
-    cat > /tmp/backend.hcl <<EOF
-bucket = "$TF_STATE_BUCKET"
-key    = "${TF_STATE_KEY:-queerglobal-grandkru/terraform.tfstate}"
-region = "${TF_STATE_REGION:-auto}"
-endpoint = "$TF_STATE_ENDPOINT"
-skip_credentials_validation = true
-skip_metadata_api_check = true
-skip_region_validation = true
-EOF
-    tofu -chdir=infra init -backend-config=/tmp/backend.hcl
-    tofu -chdir=infra destroy -auto-approve \
-      -target=cloudflare_workers_custom_domain.coming_soon \
-      -target=cloudflare_workers_script.coming_soon
-  '
-```
+to roll back to. The deploy workflow runs `scripts/run-infra-first-deploy-cleanup.sh`
+automatically (targeted destroy of the Worker and custom domain after read-only
+env checks and a saved destroy plan). Do not run `tofu destroy` by hand unless
+CI is unavailable; break-glass manual apply is documented in [infra/README.md](infra/README.md).
 
 ### Notes for running this
 

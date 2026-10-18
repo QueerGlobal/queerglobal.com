@@ -16,7 +16,10 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const API_BASE = "https://api.cloudflare.com/client/v4";
+import { cloudflareBearerRequest, CLOUDFLARE_API_BASE } from "./lib/cloudflare-github-api.mjs";
+import { runCliWithErrorReport } from "./lib/sentry-report.mjs";
+
+const API_BASE = CLOUDFLARE_API_BASE;
 
 /** Cloudflare Workers version IDs are UUIDs. */
 export const WORKER_VERSION_ID_PATTERN =
@@ -79,12 +82,11 @@ export async function listWorkerDeployments(
   const fetchImpl = options.fetchImpl ?? fetch;
   const limit = options.limit ?? 5;
   const url = `${API_BASE}/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/deployments?limit=${limit}`;
-  const response = await fetchImpl(url, {
-    headers: {
-      Authorization: `Bearer ${apiToken}`,
-      "Content-Type": "application/json",
-    },
-  });
+  const response = await cloudflareBearerRequest(
+    url.replace(API_BASE, ""),
+    apiToken,
+    fetchImpl,
+  );
   const payload = await response.json();
   if (!response.ok || !payload.success) {
     if (isWorkerScriptNotFound(response, payload)) {
@@ -123,13 +125,9 @@ export async function deployWorkerVersion(
   options = {},
 ) {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const url = `${API_BASE}/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/deployments`;
-  const response = await fetchImpl(url, {
+  const pathSuffix = `/accounts/${accountId}/workers/scripts/${encodeURIComponent(scriptName)}/deployments`;
+  const response = await cloudflareBearerRequest(pathSuffix, apiToken, fetchImpl, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiToken}`,
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify({
       strategy: "percentage",
       versions: [{ version_id: versionId, percentage: 100 }],
@@ -217,5 +215,15 @@ if (
   path.resolve(process.argv[1]) === path.resolve(thisFile)
 ) {
   process.env.WORKER_NAME ??= "queerglobal-grandkru";
-  process.exitCode = await runRollbackCli();
+  runCliWithErrorReport(
+    async () => {
+      process.exitCode = await runRollbackCli();
+      if (process.exitCode !== 0) {
+        throw new Error("Worker rollback failed.");
+      }
+    },
+    { component: "worker-rollback" },
+  ).catch(() => {
+    process.exitCode = 1;
+  });
 }

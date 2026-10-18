@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runBootstrapCli } from "./bootstrap-error-report.mjs";
+import { githubBearerRequest } from "./lib/cloudflare-github-api.mjs";
 import { preflightBootstrapCloudflare } from "./preflight-bootstrap-cloudflare.mjs";
 
 /**
@@ -39,13 +40,11 @@ export async function preflightBootstrapGithubAdmin(options = {}) {
     return { ok: false, error: "TF_VAR_github_token is required." };
   }
 
-  const response = await fetchImpl(`https://api.github.com/repos/${owner}/${repo}`, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      Authorization: `Bearer ${githubToken}`,
-      "X-GitHub-Api-Version": "2022-11-28",
-    },
-  });
+  const response = await githubBearerRequest(
+    `https://api.github.com/repos/${owner}/${repo}`,
+    githubToken,
+    fetchImpl,
+  );
   const body = await response.json();
   if (!response.ok) {
     const message = body.message ?? response.statusText;

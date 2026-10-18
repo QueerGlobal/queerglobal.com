@@ -8,27 +8,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runBootstrapCli } from "./bootstrap-error-report.mjs";
+import { cloudflareBearerGet } from "./lib/cloudflare-github-api.mjs";
 
-const API = "https://api.cloudflare.com/client/v4";
-
-/**
- * @param {string} token
- * @param {string} pathSuffix
- * @param {typeof fetch} fetchImpl
- * @returns {Promise<Response>}
- */
-async function cloudflareGet(token, pathSuffix, fetchImpl) {
-  return fetchImpl(`${API}${pathSuffix}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-  });
-}
+const ACCOUNT_API_TOKENS_WRITE = "Account API Tokens Write";
 
 /**
  * @param {unknown} body
- * @returns {body is { success: true, result: { status: string } }}
+ * @returns {body is { success: true, result: { status: string, id?: string } }}
  */
 function verifyBodyActive(body) {
   return (
@@ -47,23 +33,34 @@ function verifyBodyActive(body) {
  *   accountId: string,
  *   fetchImpl: typeof fetch,
  * }} input
- * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
+ * @returns {Promise<
+ *   | { ok: true, tokenId: string, tokenKind: "account" | "user" }
+ *   | { ok: false, error: string }
+ * >}
  */
 export async function cloudflareVerifyActiveToken(input) {
-  const accountVerify = await cloudflareGet(
-    input.token,
+  const accountVerify = await cloudflareBearerGet(
     `/accounts/${input.accountId}/tokens/verify`,
+    input.token,
     input.fetchImpl,
   );
   const accountBody = await accountVerify.json();
   if (accountVerify.ok && verifyBodyActive(accountBody)) {
-    return { ok: true };
+    const tokenId = accountBody.result.id;
+    if (typeof tokenId === "string" && tokenId.length > 0) {
+      return { ok: true, tokenId, tokenKind: "account" };
+    }
+    return { ok: false, error: "Cloudflare account token verify succeeded but returned no token id." };
   }
 
-  const userVerify = await cloudflareGet(input.token, "/user/tokens/verify", input.fetchImpl);
+  const userVerify = await cloudflareBearerGet("/user/tokens/verify", input.token, input.fetchImpl);
   const userBody = await userVerify.json();
   if (userVerify.ok && verifyBodyActive(userBody)) {
-    return { ok: true };
+    const tokenId = userBody.result.id;
+    if (typeof tokenId === "string" && tokenId.length > 0) {
+      return { ok: true, tokenId, tokenKind: "user" };
+    }
+    return { ok: false, error: "Cloudflare user token verify succeeded but returned no token id." };
   }
 
   const message =
@@ -77,14 +74,58 @@ export async function cloudflareVerifyActiveToken(input) {
  * @param {{
  *   token: string,
  *   accountId: string,
+ *   tokenId: string,
+ *   tokenKind: "account" | "user",
+ *   fetchImpl: typeof fetch,
+ * }} input
+ * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
+ */
+export async function cloudflareProbeAccountApiTokensWrite(input) {
+  const pathSuffix =
+    input.tokenKind === "account"
+      ? `/accounts/${input.accountId}/tokens/${input.tokenId}`
+      : `/user/tokens/${input.tokenId}`;
+  const response = await cloudflareBearerGet(pathSuffix, input.token, input.fetchImpl);
+  const body = await response.json();
+  if (!response.ok || body.success !== true) {
+    const message = body.errors?.[0]?.message ?? response.statusText;
+    return {
+      ok: false,
+      error: `Cloudflare token policy read failed (GET ${pathSuffix}): ${message}`,
+    };
+  }
+  const policies = body.result?.policies;
+  if (!Array.isArray(policies)) {
+    return { ok: false, error: "Cloudflare token detail returned an unexpected payload." };
+  }
+  const hasWrite = policies.some((policy) =>
+    (policy.permission_groups ?? []).some(
+      (group) =>
+        typeof group.name === "string" &&
+        group.name.toLowerCase() === ACCOUNT_API_TOKENS_WRITE.toLowerCase(),
+    ),
+  );
+  if (!hasWrite) {
+    return {
+      ok: false,
+      error: `Cloudflare bootstrap token is missing ${ACCOUNT_API_TOKENS_WRITE} (required to create account API tokens during bootstrap apply).`,
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * @param {{
+ *   token: string,
+ *   accountId: string,
  *   fetchImpl: typeof fetch,
  * }} input
  * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
  */
 export async function cloudflareProbeR2Buckets(input) {
-  const response = await cloudflareGet(
-    input.token,
+  const response = await cloudflareBearerGet(
     `/accounts/${input.accountId}/r2/buckets`,
+    input.token,
     input.fetchImpl,
   );
   const body = await response.json();
@@ -116,9 +157,9 @@ export async function cloudflareProbeZoneOnAccount(input) {
     name: input.zoneName,
     "account.id": input.accountId,
   });
-  const response = await cloudflareGet(
-    input.token,
+  const response = await cloudflareBearerGet(
     `/zones?${query.toString()}`,
+    input.token,
     input.fetchImpl,
   );
   const body = await response.json();
@@ -174,6 +215,17 @@ export async function preflightBootstrapCloudflare(options) {
   const verify = await cloudflareVerifyActiveToken({ token, accountId, fetchImpl });
   if (!verify.ok) {
     return verify;
+  }
+
+  const tokensWrite = await cloudflareProbeAccountApiTokensWrite({
+    token,
+    accountId,
+    tokenId: verify.tokenId,
+    tokenKind: verify.tokenKind,
+    fetchImpl,
+  });
+  if (!tokensWrite.ok) {
+    return tokensWrite;
   }
 
   const r2 = await cloudflareProbeR2Buckets({ token, accountId, fetchImpl });

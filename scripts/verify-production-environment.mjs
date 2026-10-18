@@ -7,6 +7,9 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { githubBearerRequest } from "./lib/cloudflare-github-api.mjs";
+import { runCliWithErrorReport } from "./lib/sentry-report.mjs";
+
 /** @typedef {{ type?: string, reviewers?: Array<unknown> }} ProtectionRule */
 
 /**
@@ -74,15 +77,10 @@ export function deploymentBranchPoliciesAllowMainOnly(payload, expectedBranch = 
  * @returns {Promise<unknown>}
  */
 export async function fetchDeploymentBranchPolicies(owner, repo, environment, token, fetchImpl) {
-  const response = await fetchImpl(
+  const response = await githubBearerRequest(
     `https://api.github.com/repos/${owner}/${repo}/environments/${encodeURIComponent(environment)}/deployment-branch-policies`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-    },
+    token,
+    fetchImpl,
   );
   const payload = await response.json();
   if (!response.ok) {
@@ -122,15 +120,10 @@ export async function verifyProductionEnvironmentProtected(options = {}) {
     );
   }
 
-  const response = await fetchImpl(
+  const response = await githubBearerRequest(
     `https://api.github.com/repos/${owner}/${repo}/environments/${encodeURIComponent(environment)}`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-    },
+    token,
+    fetchImpl,
   );
 
   const payload = await response.json();
@@ -201,5 +194,15 @@ if (
   process.argv[1] !== undefined &&
   path.resolve(process.argv[1]) === path.resolve(thisFile)
 ) {
-  process.exitCode = await runVerifyProductionEnvironmentCli();
+  runCliWithErrorReport(
+    async () => {
+      process.exitCode = await runVerifyProductionEnvironmentCli();
+      if (process.exitCode !== 0) {
+        throw new Error("Production environment verification failed.");
+      }
+    },
+    { component: "deploy-verify" },
+  ).catch(() => {
+    process.exitCode = 1;
+  });
 }

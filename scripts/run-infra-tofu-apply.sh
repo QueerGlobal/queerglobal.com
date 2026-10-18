@@ -3,8 +3,15 @@
 set -euo pipefail
 
 umask 077
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+plan="$tmp/tfplan"
+trap 'rm -f "$plan"; rm -rf "$tmp"' EXIT
+
+on_err() {
+  node "$ROOT/scripts/report-cli-failure.mjs" "run-infra-tofu-apply" "$1" 2>/dev/null || true
+}
+trap 'on_err $LINENO' ERR
 
 test -n "${CLOUDFLARE_API_TOKEN:-}"
 test -n "${CLOUDFLARE_ACCOUNT_ID:-}"
@@ -28,6 +35,7 @@ fi
   echo "skip_region_validation = true"
 } >"$tmp/backend.hcl"
 
-tofu -chdir=infra init -backend-config="$tmp/backend.hcl"
-tofu -chdir=infra plan -out="$tmp/tfplan"
-tofu -chdir=infra apply -auto-approve "$tmp/tfplan"
+tofu -chdir="$ROOT/infra" init -backend-config="$tmp/backend.hcl" -input=false
+tofu -chdir="$ROOT/infra" validate -no-color
+tofu -chdir="$ROOT/infra" plan -input=false -out="$plan"
+tofu -chdir="$ROOT/infra" apply -auto-approve -input=false "$plan"

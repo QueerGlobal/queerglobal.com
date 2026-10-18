@@ -75,6 +75,21 @@ describe("deploy-production redeploy_release_tag job", () => {
   });
 });
 
+describe("deploy-production deploy job secrets and cleanup", () => {
+  const yaml = fs.readFileSync(workflowPath, "utf8");
+  const deploy = extractJobBlock(yaml, "deploy");
+
+  it("does not embed GITHUB_TOKEN in git push URLs", () => {
+    assert.doesNotMatch(deploy, /x-access-token:\$\{\{/);
+    assert.match(deploy, /git push origin "\$RELEASE_TAG"/);
+  });
+
+  it("runs automated first-deploy cleanup instead of README-only instructions", () => {
+    assert.match(deploy, /run-infra-first-deploy-cleanup\.sh/);
+    assert.doesNotMatch(deploy, /First-deploy break-glass destroy/);
+  });
+});
+
 describe("deploy-production jobs that verify the environment", () => {
   const yaml = fs.readFileSync(workflowPath, "utf8");
 

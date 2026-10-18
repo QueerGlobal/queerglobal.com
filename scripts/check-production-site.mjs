@@ -14,6 +14,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { runCliWithErrorReport } from "./lib/sentry-report.mjs";
+
 /** @typedef {{ ok: true, status: number, titleFound: true }} ComingSoonOk */
 /** @typedef {{ ok: false, status: number | null, error: string, bodySnippet?: string }} ComingSoonFail */
 
@@ -259,5 +261,15 @@ if (
   process.argv[1] !== undefined &&
   path.resolve(process.argv[1]) === path.resolve(thisFile)
 ) {
-  process.exitCode = await runComingSoonCheck();
+  runCliWithErrorReport(
+    async () => {
+      process.exitCode = await runComingSoonCheck();
+      if (process.exitCode !== 0) {
+        throw new Error("Production smoke check failed.");
+      }
+    },
+    { component: "deploy-smoke" },
+  ).catch(() => {
+    process.exitCode = 1;
+  });
 }

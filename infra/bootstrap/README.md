@@ -23,7 +23,7 @@ Bootstrap apply fails if `doppler_config` equals `doppler_bootstrap_config` or i
 
 Create a **user or account API token** that can pass the bootstrap preflight capability probes:
 
-- **Account API Tokens Write**: not provable by a read probe; the first apply fails at token creation if it is missing.
+- **Account API Tokens Write**: preflight reads the verified token's policies (`GET /accounts/{id}/tokens/{token_id}` or user token equivalent) and requires this permission group before any OpenTofu write.
 - **Workers R2 Storage Write** on this account (creates the state bucket). Preflight can only prove read access (`GET /accounts/{id}/r2/buckets`); if write is missing, the first apply fails at bucket creation.
 - **Zone Read** for **`grandkru.com`** on this account (`GET /zones?name=grandkru.com&account.id={id}` must return exactly that zone)
 

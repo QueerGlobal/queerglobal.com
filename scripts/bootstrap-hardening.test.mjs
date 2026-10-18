@@ -126,7 +126,43 @@ describe("bootstrap-tofu-apply.sh", () => {
   it("does not auto-approve the bootstrap apply", () => {
     const src = fs.readFileSync("scripts/bootstrap-tofu-apply.sh", "utf8");
     assert.doesNotMatch(src, /auto-approve/);
-    assert.match(src, /^tofu -chdir=infra\/bootstrap apply "\$@"$/m);
+    assert.match(src, /tofu -chdir="\$bootstrap_dir" apply "\$@"/);
+    assert.match(src, /bootstrap-state-backup\.sh/);
+  });
+
+  it("backs up state on EXIT when apply fails after it starts", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "apply-fail-"));
+    const stateDir = path.join(work, "bootstrap");
+    fs.mkdirSync(stateDir, { recursive: true });
+    fs.writeFileSync(path.join(stateDir, "terraform.tfstate"), '{"partial":true}');
+    const backupLog = path.join(work, "backup.log");
+    const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`);
+    const tofu = stubBin(
+      "tofu",
+      `case "$*" in
+  *" apply"|*" apply "*) exit 42 ;;
+  *) exit 0 ;;
+esac`,
+    );
+    const doppler = stubBin(
+      "doppler",
+      `if [ "$2" = "set" ] || [ "$3" = "set" ]; then cat >> "${backupLog}"; fi
+exit 0`,
+    );
+    const nodeBin = path.dirname(process.execPath);
+    const r = spawnSync("bash", ["scripts/bootstrap-tofu-apply.sh"], {
+      env: {
+        PATH: `${node}:${tofu}:${doppler}:${nodeBin}:/usr/bin:/bin`,
+        HOME: os.tmpdir(),
+        BOOTSTRAP_FIRST_RUN: "1",
+        BOOTSTRAP_APPLY_DIR: stateDir,
+        TF_VAR_doppler_project: "queerglobal",
+        TF_VAR_doppler_bootstrap_config: "bootstrap",
+      },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 42);
+    assert.ok(fs.existsSync(backupLog), "expected backup on failed apply");
   });
 
   it("passes -replace through to tofu apply after preflight", () => {
@@ -153,7 +189,10 @@ describe("bootstrap-tofu-apply.sh", () => {
     );
     assert.equal(r.status, 0, r.stderr);
     const argv = fs.readFileSync(log, "utf8");
-    assert.match(argv, /-chdir=infra\/bootstrap apply -replace=doppler_service_token\.github_actions_production/);
+    assert.match(
+      argv,
+      /-chdir=(?:infra\/bootstrap|.*\/infra\/bootstrap) apply -replace=doppler_service_token\.github_actions_production/,
+    );
   });
 });
 

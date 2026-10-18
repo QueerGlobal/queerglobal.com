@@ -85,7 +85,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          persist-credentials: false
+          persist-credentials: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -138,20 +139,20 @@ jobs:
         if: success() && steps.recheck.outcome == 'success'
         env:
           RELEASE_TAG: release/${{ github.run_number }}-${{ github.sha }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "Mark Nyon"
           git config user.email "mnyon-grandkru@users.noreply.github.com"
           git tag "$RELEASE_TAG"
-          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$RELEASE_TAG"
+          git push origin "$RELEASE_TAG"
 
       - name: Roll back Worker on smoke or recheck failure
         if: failure() && steps.apply.outcome == 'success' && (steps.smoke.outcome == 'failure' || steps.recheck.outcome == 'failure')
         run: |
           PREVIOUS="$(tr -d '\n' < .previous-worker-version 2>/dev/null || true)"
           if [ -z "$PREVIOUS" ] || [ "$PREVIOUS" = "__NO_PREVIOUS_WORKER__" ]; then
-            echo "No previous Worker version (first deploy); skip Worker rollback."
-            echo "First-deploy break-glass destroy: see README.md section 'First deploy, smoke or recheck failed' (doppler run, backend init, and targeted destroy)."
+            echo "No previous Worker version (first deploy); running automated stack cleanup."
+            doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
+              bash scripts/run-infra-first-deploy-cleanup.sh
           else
             doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- \
               env WORKER_NAME=queerglobal-grandkru node scripts/worker-rollback.mjs "$PREVIOUS"
