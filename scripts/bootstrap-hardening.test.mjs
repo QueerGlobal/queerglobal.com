@@ -362,7 +362,7 @@ exit 0`,
   const r = spawnSync("bash", ["scripts/bootstrap-passphrase-rotate.sh", state], {
     input: opts.stdin,
     env: {
-      PATH: `${tofu}:${doppler}:${process.env.PATH}`,
+      PATH: `${tofu}:${doppler}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
       HOME: os.tmpdir(),
       TF_VAR_bootstrap_state_passphrase: OLD_PASS,
       TF_VAR_bootstrap_state_passphrase_next: NEW_PASS,
@@ -398,6 +398,19 @@ describe("bootstrap-passphrase-rotate.sh promote (real script, stub tofu and dop
     assert.equal(r.calls[2].stdin, NEW_PASS);
     for (const c of r.calls) {
       assert.doesNotMatch(c.argv, new RegExp(`${OLD_PASS}|${NEW_PASS}`));
+    }
+  });
+
+  it("runs this test's own node, not whatever node is first on the caller's PATH", () => {
+    const savedPath = process.env.PATH;
+    const callerNode = stubBin("node", 'echo "caller node used" >&2; exit 126');
+    process.env.PATH = `${callerNode}:${savedPath}`;
+    try {
+      const r = runRotate({ stdin: "rotate\npromote\n" });
+      assert.equal(r.status, 0, r.stderr);
+      assert.doesNotMatch(r.stderr, /caller node used/);
+    } finally {
+      process.env.PATH = savedPath;
     }
   });
 
@@ -439,7 +452,7 @@ exit 0`,
       const r = spawnSync("bash", ["-c", snippet], {
         cwd: work,
         env: {
-          PATH: `${doppler}:${process.env.PATH}`,
+          PATH: `${doppler}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
           HOME: os.tmpdir(),
           TF_VAR_bootstrap_state_passphrase_next: NEW_PASS,
           TF_VAR_doppler_project: "queerglobal",
