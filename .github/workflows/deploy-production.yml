@@ -50,11 +50,20 @@ jobs:
         run: tofu fmt -check -recursive infra/
 
       - name: Validate OpenTofu configuration
+        env:
+          TF_VAR_bootstrap_state_passphrase: mock-bootstrap-passphrase-for-ci
         run: |
           tofu -chdir=infra init -backend=false
           tofu -chdir=infra validate
           tofu -chdir=infra/bootstrap init -backend=false
           tofu -chdir=infra/bootstrap validate
+
+      - name: Run OpenTofu mock tests
+        env:
+          TF_VAR_bootstrap_state_passphrase: mock-bootstrap-passphrase-for-ci
+        run: |
+          tofu -chdir=infra test
+          tofu -chdir=infra/bootstrap test
 
       - name: Run tests
         run: npm test
@@ -164,7 +173,7 @@ jobs:
           PREVIOUS="$(tr -d '\n' < .previous-worker-version 2>/dev/null || true)"
           if [ -z "$PREVIOUS" ] || [ "$PREVIOUS" = "__NO_PREVIOUS_WORKER__" ]; then
             echo "No previous Worker version (first deploy); skip Worker rollback."
-            echo "First-deploy break-glass: doppler run -- tofu -chdir=infra destroy -target=cloudflare_workers_custom_domain.coming_soon -target=cloudflare_workers_script.coming_soon"
+            echo "First-deploy break-glass destroy: see README.md section 'First deploy, smoke or recheck failed' (doppler run, backend init, and targeted destroy)."
           else
             doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- \
               env WORKER_NAME=queerglobal-grandkru node scripts/worker-rollback.mjs "$PREVIOUS"

@@ -17,7 +17,7 @@ variable "github_repository" {
 
 variable "github_token" {
   type        = string
-  description = "GitHub PAT with administration:write and secrets for the repository."
+  description = "GitHub fine-grained PAT: Administration (write), Environments (write), Metadata (read) on this repository."
   sensitive   = true
 }
 
@@ -45,8 +45,14 @@ variable "doppler_project" {
 
 variable "doppler_config" {
   type        = string
-  description = "Doppler config slug (for example prd)."
+  description = "Doppler config slug for deploy secrets (for example prd). The GitHub Actions service token is read-only on this config."
   default     = "prd"
+}
+
+variable "doppler_bootstrap_config" {
+  type        = string
+  description = "Doppler config for bootstrap-only secrets (for example bootstrap). Must not be readable by the deploy service token on doppler_config."
+  default     = "bootstrap"
 }
 
 variable "deploy_api_token_name" {
@@ -70,7 +76,12 @@ variable "zone_name" {
 variable "bootstrap_state_passphrase" {
   type        = string
   sensitive   = true
-  description = "Encrypts local bootstrap state (min 16 characters). TF_VAR_bootstrap_state_passphrase from Doppler; never commit."
+  description = "Encrypts local bootstrap state. Load from Doppler doppler_bootstrap_config (BOOTSTRAP_STATE_PASSPHRASE); never commit or store in the deploy config."
+
+  validation {
+    condition     = length(var.bootstrap_state_passphrase) >= 16
+    error_message = "bootstrap_state_passphrase must be at least 16 characters."
+  }
 }
 
 variable "tf_state_bucket_name" {

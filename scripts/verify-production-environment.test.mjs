@@ -54,6 +54,7 @@ describe("environmentAllowsAdminBypass", () => {
   it("detects when admins can bypass environment protection", () => {
     assert.equal(environmentAllowsAdminBypass({ can_admins_bypass: true }), true);
     assert.equal(environmentAllowsAdminBypass({ can_admins_bypass: false }), false);
+    assert.equal(environmentAllowsAdminBypass({}), true);
   });
 });
 
@@ -85,6 +86,32 @@ describe("verifyProductionEnvironmentProtected", () => {
     });
     assert.equal(result.reviewers, 1);
     assert.equal(result.mainOnlyDeploy, true);
+  });
+
+  it("throws when can_admins_bypass is omitted from the API payload", async () => {
+    const fetchImpl = async (url) => {
+      if (String(url).includes("deployment-branch-policies")) {
+        return {
+          ok: true,
+          json: async () => githubDeploymentBranchPolicies,
+        };
+      }
+      const { can_admins_bypass: _removed, ...withoutBypass } = githubProductionEnvironment;
+      return {
+        ok: true,
+        json: async () => withoutBypass,
+      };
+    };
+    await assert.rejects(
+      () =>
+        verifyProductionEnvironmentProtected({
+          owner: "QueerGlobal",
+          repo: "queerglobal.com",
+          token: "token",
+          fetchImpl,
+        }),
+      /admins to bypass protection/,
+    );
   });
 
   it("throws when repository admins can bypass the environment", async () => {

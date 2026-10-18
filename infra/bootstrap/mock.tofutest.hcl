@@ -109,6 +109,34 @@ run "plan_mock" {
     production_reviewer_usernames = ["octocat"]
     bootstrap_state_passphrase    = "mock-bootstrap-passphrase"
   }
+
+  assert {
+    condition     = github_repository_environment.production.can_admins_bypass == false
+    error_message = "Production environment must not allow admin bypass."
+  }
+
+  assert {
+    condition = (
+      github_repository_environment.production.deployment_branch_policy[0].custom_branch_policies == true &&
+      github_repository_environment.production.deployment_branch_policy[0].protected_branches == false
+    )
+    error_message = "Production environment must use custom branch policies with protected_branches disabled."
+  }
+
+  assert {
+    condition     = github_repository_environment_deployment_policy.production_main.branch_pattern == "main"
+    error_message = "Deployment branch policy must be limited to main."
+  }
+
+  assert {
+    condition     = github_actions_environment_secret.doppler_token.secret_name == "DOPPLER_TOKEN"
+    error_message = "GitHub environment secret must be named DOPPLER_TOKEN."
+  }
+
+  assert {
+    condition     = github_actions_environment_secret.doppler_token.plaintext_value == doppler_service_token.github_actions_production.key
+    error_message = "DOPPLER_TOKEN must reference the Doppler service token key."
+  }
 }
 
 run "apply_mock" {
@@ -126,4 +154,45 @@ run "apply_mock" {
     production_reviewer_usernames = ["octocat"]
     bootstrap_state_passphrase    = "mock-bootstrap-passphrase"
   }
+
+  assert {
+    condition     = github_repository_environment.production.can_admins_bypass == false
+    error_message = "Production environment must not allow admin bypass."
+  }
+
+  assert {
+    condition     = github_repository_environment_deployment_policy.production_main.branch_pattern == "main"
+    error_message = "Deployment branch policy must be limited to main."
+  }
+
+  assert {
+    condition     = github_actions_environment_secret.doppler_token.secret_name == "DOPPLER_TOKEN"
+    error_message = "GitHub environment secret must be named DOPPLER_TOKEN."
+  }
+
+  assert {
+    condition     = github_actions_environment_secret.doppler_token.plaintext_value == doppler_service_token.github_actions_production.key
+    error_message = "DOPPLER_TOKEN must reference the Doppler service token key."
+  }
+}
+
+run "reject_short_passphrase" {
+  command = plan
+
+  plan_options {
+    refresh = false
+  }
+
+  variables {
+    cloudflare_account_id         = "00000000000000000000000000000001"
+    github_token                  = "ghp_mock_bootstrap_token_000000000000"
+    doppler_management_token      = "dp.st.mock_management_token_000000000000"
+    doppler_project               = "queerglobal"
+    production_reviewer_usernames = ["octocat"]
+    bootstrap_state_passphrase    = "short"
+  }
+
+  expect_failures = [
+    var.bootstrap_state_passphrase,
+  ]
 }

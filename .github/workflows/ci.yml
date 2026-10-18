@@ -36,11 +36,20 @@ jobs:
         run: tofu fmt -check -recursive infra/
 
       - name: Validate OpenTofu configuration
+        env:
+          TF_VAR_bootstrap_state_passphrase: mock-bootstrap-passphrase-for-ci
         run: |
           tofu -chdir=infra init -backend=false
           tofu -chdir=infra validate
           tofu -chdir=infra/bootstrap init -backend=false
           tofu -chdir=infra/bootstrap validate
+
+      - name: Run OpenTofu mock tests
+        env:
+          TF_VAR_bootstrap_state_passphrase: mock-bootstrap-passphrase-for-ci
+        run: |
+          tofu -chdir=infra test
+          tofu -chdir=infra/bootstrap test
 
       - name: Run tests
         run: npm test

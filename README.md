@@ -52,9 +52,14 @@ and are fetched at deploy time:
 Bootstrap also writes `TF_STATE_KEY` and `TF_STATE_REGION` to Doppler; CI uses
 the same defaults (`queerglobal-grandkru/terraform.tfstate`, `auto`).
 
-Run [infra/bootstrap](infra/bootstrap/README.md) once before the first merge so
-the protected **production** environment, `DOPPLER_TOKEN`, R2 bucket, scoped R2
-token, and deploy API token (Workers plus zone DNS/routes) exist in Doppler.
+Run [infra/bootstrap](infra/bootstrap/README.md) once before the first merge. That
+creates:
+
+| Where | What bootstrap creates |
+|-------|-------------------------|
+| **GitHub** | Protected **production** environment (reviewers, main-only deploys, no admin bypass) and environment secret **`DOPPLER_TOKEN`** |
+| **Cloudflare** | R2 state bucket, scoped R2 token, and deploy API token (Workers plus zone DNS/routes) |
+| **Doppler (`prd`)** | `CLOUDFLARE_*`, `TF_STATE_*`, and `AWS_*` for deploys (written by bootstrap; not copied by hand) |
 
 The Cloudflare account ID and workers.dev subdomain name are intentionally
 omitted from committed files. They may still appear in older git history.
@@ -129,8 +134,10 @@ anyone running deploys use the same state file. The bootstrap stack creates the
 bucket and scoped R2 credentials and writes `TF_STATE_*` and `AWS_*` into Doppler.
 The deploy workflow reads them from Doppler for OpenTofu init.
 
-Besides bootstrap, Doppler secrets, and GitHub environment approval, no other
-manual infrastructure steps are required. See [infra/README.md](infra/README.md).
+Besides one-time bootstrap, GitHub environment approval on each deploy, and storing
+**`BOOTSTRAP_STATE_PASSPHRASE`** in the separate Doppler **bootstrap** config (see
+[infra/bootstrap/README.md](infra/bootstrap/README.md)), no other manual infrastructure
+steps are required. See [infra/README.md](infra/README.md).
 
 Break-glass manual apply (when CI is unavailable): see [infra/README.md](infra/README.md).
 

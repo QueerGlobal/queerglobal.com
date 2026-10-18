@@ -10,12 +10,14 @@ merge to `main`, with GitHub Environment `production` approval.
 
 Run [bootstrap/](bootstrap/README.md) once to create:
 
-- GitHub **production** environment with required reviewers
+- GitHub **production** environment with required reviewers, **main-only** branch policy, and **no admin bypass**
 - GitHub environment secret **DOPPLER_TOKEN** (only secret stored in GitHub)
-- Cloudflare **R2 bucket** and scoped **R2 API token** for OpenTofu state
+- Cloudflare **R2 bucket**, scoped **R2 API token**, and **deploy API token**
+- Doppler **production** secrets (`CLOUDFLARE_*`, `TF_STATE_*`, `AWS_*`)
 
 The deploy workflow refuses to run if the production environment has no
-reviewers (`scripts/verify-production-environment.mjs`).
+reviewers, allows admins to bypass protection, or is not limited to **main** only
+(`scripts/verify-production-environment.mjs`).
 
 ## Secrets and variables (Doppler)
 
@@ -29,7 +31,7 @@ secret store. Do not commit account IDs or API tokens to this repo.
 | `DOPPLER_TOKEN` | GitHub Actions only (set by bootstrap; not in Doppler) |
 | `TF_STATE_BUCKET`, `TF_STATE_KEY`, `TF_STATE_REGION` | Remote state bucket and object key |
 | `TF_STATE_ENDPOINT` | S3 API endpoint (Cloudflare R2) |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Scoped R2 credentials from bootstrap outputs |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Scoped R2 credentials (bootstrap writes to Doppler) |
 
 OpenTofu reads `cloudflare_account_id` from `TF_VAR_cloudflare_account_id`,
 which CI sets from `CLOUDFLARE_ACCOUNT_ID` in Doppler.
@@ -92,6 +94,9 @@ tofu -chdir=infra validate
 tofu -chdir=infra/bootstrap init -backend=false
 tofu -chdir=infra/bootstrap validate
 tofu fmt -check -recursive infra/
+export TF_VAR_bootstrap_state_passphrase='mock-bootstrap-passphrase-for-ci'
+tofu -chdir=infra test
+tofu -chdir=infra/bootstrap test
 ```
 
 ## Manual apply (break-glass)

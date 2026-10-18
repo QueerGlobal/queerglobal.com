@@ -43,7 +43,7 @@ export function environmentUsesCustomBranchPolicies(payload) {
  * @returns {boolean}
  */
 export function environmentAllowsAdminBypass(payload) {
-  return payload.can_admins_bypass === true;
+  return payload.can_admins_bypass !== false;
 }
 
 /**

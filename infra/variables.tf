@@ -1,6 +1,11 @@
 variable "cloudflare_account_id" {
   type        = string
   description = "Cloudflare account ID (set via TF_VAR_cloudflare_account_id or Doppler)."
+
+  validation {
+    condition     = length(var.cloudflare_account_id) > 0
+    error_message = "cloudflare_account_id is required."
+  }
 }
 
 variable "worker_name" {
