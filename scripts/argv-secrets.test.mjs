@@ -55,8 +55,11 @@ function installShims(root) {
  */
 function workTree(mutate) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "argv-tree-"));
+  // Leave out provider caches and any local bootstrap state, so a developer's
+  // real state is never copied into a temporary directory.
+  const skip = (src) => !/(^|\/)(\.terraform|terraform\.tfstate(\.backup)?)$/.test(src);
   for (const dir of ["scripts", ".github", "infra"]) {
-    fs.cpSync(path.join(REPO, dir), path.join(root, dir), { recursive: true });
+    fs.cpSync(path.join(REPO, dir), path.join(root, dir), { recursive: true, filter: skip });
   }
   fs.copyFileSync(path.join(REPO, "package.json"), path.join(root, "package.json"));
   fs.symlinkSync(path.join(REPO, "node_modules"), path.join(root, "node_modules"));
@@ -103,9 +106,7 @@ function runAll(root) {
   const checkout = path.join(root, "checkout");
   execFileSync(REAL.git, ["init", "-q", checkout]);
   execFileSync(REAL.git, ["-C", checkout, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "c"]);
-  const bootstrapDir = path.join(root, "bootstrap-state");
-  fs.mkdirSync(bootstrapDir);
-  fs.writeFileSync(path.join(bootstrapDir, "terraform.tfstate"), '{"encrypted":true}');
+  fs.writeFileSync(path.join(root, "infra", "bootstrap", "terraform.tfstate"), '{"encrypted":true}');
   fs.writeFileSync(path.join(root, "first-deploy"), "__NO_PREVIOUS_WORKER__\n");
   fs.writeFileSync(path.join(root, "existing"), `${PREVIOUS_VERSION}\n`);
 
@@ -140,7 +141,7 @@ function runAll(root) {
     "workflow first-deploy cleanup": [root, ["-ec", step("Roll back Worker on smoke or recheck failure").replaceAll(".previous-worker-version", "first-deploy")], {}],
     "workflow Worker rollback": [root, ["-ec", step("Roll back Worker on smoke or recheck failure").replaceAll(".previous-worker-version", "existing")], {}],
     "manual rollback": [root, ["-ec", step("Roll back Worker")], { ROLLBACK_VERSION_ID: PREVIOUS_VERSION }],
-    "bootstrap apply": [root, ["scripts/bootstrap-tofu-apply.sh"], { BOOTSTRAP_APPLY_DIR: bootstrapDir }],
+    "bootstrap apply": [root, ["scripts/bootstrap-tofu-apply.sh"], {}],
     "workflow tag release": [checkout, ["-ec", step("Tag release").replace("scripts/", `${root}/scripts/`)], {
       RELEASE_TAG: "release/1-0123456789abcdef0123456789abcdef01234567",
       GITHUB_SERVER_URL: `file://${remoteDir}`,

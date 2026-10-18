@@ -9,6 +9,25 @@ import { preflightBootstrapCloudflare } from "./preflight-bootstrap-cloudflare.m
 import { preflightBootstrapDopplerIsolation, runPreflightBootstrapCli } from "./preflight-bootstrap.mjs";
 import { ACCOUNT_ID, bootstrapStandInFetch, fetchWith } from "./test-helpers/fetch-stub.mjs";
 
+const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
+
+/**
+ * Copy the scripts and the bootstrap stack into a temporary tree, without any
+ * local state or provider cache, so bootstrap apply tests never touch the real
+ * infra/bootstrap directory or a developer's bootstrap state.
+ * @param {(root: string) => void} [prepare]
+ * @returns {string}
+ */
+function bootstrapTree(prepare) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bootstrap-tree-"));
+  const skip = (src) => !/(^|\/)(\.terraform|terraform\.tfstate(\.backup)?)$/.test(src);
+  fs.cpSync(path.join(REPO, "scripts"), path.join(root, "scripts"), { recursive: true, filter: skip });
+  fs.cpSync(path.join(REPO, "infra", "bootstrap"), path.join(root, "infra", "bootstrap"), { recursive: true, filter: skip });
+  fs.symlinkSync(path.join(REPO, "node_modules"), path.join(root, "node_modules"));
+  prepare?.(root);
+  return root;
+}
+
 function stubBin(name, script) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stub-"));
   fs.writeFileSync(path.join(dir, name), `#!/usr/bin/env bash\n${script}\n`, { mode: 0o755 });
@@ -117,7 +136,7 @@ describe("bootstrap-tofu-apply.sh", () => {
       BOOTSTRAP_FIRST_RUN: "1",
       TF_VAR_doppler_project: "queerglobal",
     };
-    const r = spawnSync("bash", ["scripts/bootstrap-tofu-apply.sh"], { env, encoding: "utf8" });
+    const r = spawnSync("bash", ["scripts/bootstrap-tofu-apply.sh"], { cwd: bootstrapTree(), env, encoding: "utf8" });
     assert.notEqual(r.status, 0);
     assert.match(r.stderr, /TF_VAR_production_reviewer_usernames must be valid JSON array/);
     assert.equal(fs.existsSync(log), false, "tofu ran before preflight passed");
@@ -131,10 +150,9 @@ describe("bootstrap-tofu-apply.sh", () => {
   });
 
   it("backs up state on EXIT when apply fails after it starts", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "apply-fail-"));
-    const stateDir = path.join(work, "bootstrap");
-    fs.mkdirSync(stateDir, { recursive: true });
-    fs.writeFileSync(path.join(stateDir, "terraform.tfstate"), '{"partial":true}');
+    const work = bootstrapTree((root) =>
+      fs.writeFileSync(path.join(root, "infra", "bootstrap", "terraform.tfstate"), '{"partial":true}'),
+    );
     const backupLog = path.join(work, "backup.log");
     const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`);
     const tofu = stubBin(
@@ -151,11 +169,11 @@ exit 0`,
     );
     const nodeBin = path.dirname(process.execPath);
     const r = spawnSync("bash", ["scripts/bootstrap-tofu-apply.sh"], {
+      cwd: work,
       env: {
         PATH: `${node}:${tofu}:${doppler}:${nodeBin}:/usr/bin:/bin`,
         HOME: os.tmpdir(),
         BOOTSTRAP_FIRST_RUN: "1",
-        BOOTSTRAP_APPLY_DIR: stateDir,
         TF_VAR_doppler_project: "queerglobal",
         TF_VAR_doppler_bootstrap_config: "bootstrap",
       },
@@ -166,10 +184,9 @@ exit 0`,
   });
 
   it("runs the caller's EXIT trap after its own backup, with the caller's quoting intact", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "apply-trap-"));
-    const stateDir = path.join(work, "bootstrap");
-    fs.mkdirSync(stateDir, { recursive: true });
-    fs.writeFileSync(path.join(stateDir, "terraform.tfstate"), '{"partial":true}');
+    const work = bootstrapTree((root) =>
+      fs.writeFileSync(path.join(root, "infra", "bootstrap", "terraform.tfstate"), '{"partial":true}'),
+    );
     const events = path.join(work, "events.log");
     const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`);
     const tofu = stubBin("tofu", "exit 0");
@@ -179,11 +196,11 @@ exit 0`,
       "bash",
       ["-c", `trap 'echo "caller trap ran" >> "${events}"' EXIT; source scripts/bootstrap-tofu-apply.sh`],
       {
+        cwd: work,
         env: {
           PATH: `${node}:${tofu}:${doppler}:${nodeBin}:/usr/bin:/bin`,
           HOME: os.tmpdir(),
           BOOTSTRAP_FIRST_RUN: "1",
-          BOOTSTRAP_APPLY_DIR: stateDir,
           TF_VAR_doppler_project: "queerglobal",
           TF_VAR_doppler_bootstrap_config: "bootstrap",
         },
@@ -215,7 +232,7 @@ exit 0`,
         "scripts/bootstrap-tofu-apply.sh",
         "-replace=doppler_service_token.github_actions_production",
       ],
-      { env, encoding: "utf8" },
+      { cwd: bootstrapTree(), env, encoding: "utf8" },
     );
     assert.equal(r.status, 0, r.stderr);
     const argv = fs.readFileSync(log, "utf8");
@@ -223,6 +240,38 @@ exit 0`,
       argv,
       /-chdir=(?:infra\/bootstrap|.*\/infra\/bootstrap) apply -replace=doppler_service_token\.github_actions_production/,
     );
+  });
+
+  it("always applies and backs up the bootstrap stack next to the script, with no directory override", () => {
+    const work = bootstrapTree((root) =>
+      fs.writeFileSync(path.join(root, "infra", "bootstrap", "terraform.tfstate"), '{"real":true}'),
+    );
+    const decoy = fs.mkdtempSync(path.join(os.tmpdir(), "bootstrap-decoy-"));
+    fs.writeFileSync(path.join(decoy, "terraform.tfstate"), '{"decoy":true}');
+    const log = path.join(work, "tofu.log");
+    const backup = path.join(work, "backup.log");
+    const tofu = stubBin("tofu", `echo "$*" >> "${log}"; exit 0`);
+    const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`);
+    const doppler = stubBin("doppler", `if [ "$2" = "set" ]; then cat >> "${backup}"; fi; exit 0`);
+    const nodeBin = path.dirname(process.execPath);
+    const r = spawnSync("bash", ["scripts/bootstrap-tofu-apply.sh"], {
+      cwd: work,
+      env: {
+        PATH: `${tofu}:${node}:${doppler}:${nodeBin}:/usr/bin:/bin`,
+        HOME: os.tmpdir(),
+        BOOTSTRAP_FIRST_RUN: "1",
+        BOOTSTRAP_APPLY_DIR: decoy,
+        TF_VAR_doppler_project: "queerglobal",
+        TF_VAR_doppler_bootstrap_config: "bootstrap",
+      },
+      encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    const expected = path.join(fs.realpathSync(work), "infra", "bootstrap");
+    for (const line of fs.readFileSync(log, "utf8").trim().split("\n")) {
+      assert.ok(line.startsWith(`-chdir=${expected} `), `tofu ran outside the bootstrap stack: ${line}`);
+    }
+    assert.equal(fs.readFileSync(backup, "utf8"), '{"real":true}', "backed up state from another directory");
   });
 });
 

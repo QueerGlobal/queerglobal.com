@@ -128,7 +128,7 @@ export TF_VAR_bootstrap_state_passphrase="$(
 bash scripts/bootstrap-tofu-apply.sh
 ```
 
-For automated tests only, you may set **`BOOTSTRAP_APPLY_DIR`** to an alternate directory that contains (or will receive) `terraform.tfstate` instead of `infra/bootstrap`. Production and CI always use the default path.
+The script always applies `infra/bootstrap` next to it and backs up that directory's state. There is no setting that points it at another directory; the tests copy the scripts and the stack into a temporary tree instead.
 
 Or step by step (same order as the script; never skip preflight):
 
