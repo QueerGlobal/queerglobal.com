@@ -11,22 +11,62 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+/** Bucket exists and is owned by this account (create race or duplicate create). */
+export const WRANGLER_R2_BUCKET_ALREADY_OWNED_CODE = 10004;
+
+/** Bucket not found (safe to create). */
+export const WRANGLER_R2_BUCKET_NOT_FOUND_CODE = 10006;
+
+/** Bucket name taken by another account. */
+export const WRANGLER_R2_BUCKET_NAME_CONFLICT_CODE = 10073;
+
 /**
- * @param {string} message
- * @param {string} bucketName
- * @returns {boolean}
+ * @param {string} output
+ * @returns {number | null}
  */
-export function isR2BucketAlreadyExistsMessage(message, bucketName) {
-  const normalized = message.toLowerCase();
-  const bucket = bucketName.toLowerCase();
-  if (!normalized.includes(bucket)) {
-    return false;
+export function parseWranglerErrorCode(output) {
+  const match = output.match(/\[code:\s*(\d+)\]/i);
+  if (!match) {
+    return null;
   }
-  return (
-    /a bucket with (?:that|this) name already exists/.test(normalized) ||
-    /bucket already exists/.test(normalized) ||
-    /you already own a bucket with this name/.test(normalized)
-  );
+  return Number.parseInt(match[1], 10);
+}
+
+/**
+ * @param {{ status?: number | null, stdout?: string | null, stderr?: string | null }} result
+ * @returns {string}
+ */
+export function formatWranglerOutput(result) {
+  return `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+}
+
+/**
+ * @param {string} wranglerBin
+ * @param {string[]} args
+ * @param {string} accountId
+ * @param {string} apiToken
+ * @param {typeof spawnSync} spawnImpl
+ * @returns {{ status: number | null, stdout: string, stderr: string, output: string, code: number | null }}
+ */
+export function runWranglerR2Command(wranglerBin, args, accountId, apiToken, spawnImpl) {
+  const result = spawnImpl(wranglerBin, args, {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      CLOUDFLARE_ACCOUNT_ID: accountId,
+      CLOUDFLARE_API_TOKEN: apiToken,
+    },
+  });
+  const stdout = result.stdout ?? "";
+  const stderr = result.stderr ?? "";
+  const output = formatWranglerOutput(result);
+  return {
+    status: result.status ?? null,
+    stdout,
+    stderr,
+    output,
+    code: parseWranglerErrorCode(output),
+  };
 }
 
 /**
@@ -53,28 +93,47 @@ export function ensureTfStateBucket(options = {}) {
     );
   }
 
-  const result = spawnImpl(
+  const info = runWranglerR2Command(
     wranglerBin,
-    ["r2", "bucket", "create", bucketName],
-    {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        CLOUDFLARE_ACCOUNT_ID: accountId,
-        CLOUDFLARE_API_TOKEN: apiToken,
-      },
-    },
+    ["r2", "bucket", "info", bucketName],
+    accountId,
+    apiToken,
+    spawnImpl,
   );
 
-  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
-  if (result.status === 0) {
-    return { created: true, skipped: false, output };
-  }
-  if (isR2BucketAlreadyExistsMessage(output, bucketName)) {
-    return { created: false, skipped: true, output };
+  if (info.status === 0) {
+    return { created: false, skipped: true, output: info.output };
   }
 
-  throw new Error(`Failed to create R2 bucket ${bucketName}: ${output || result.status}`);
+  if (info.code !== WRANGLER_R2_BUCKET_NOT_FOUND_CODE) {
+    throw new Error(
+      `Failed to inspect R2 bucket ${bucketName}: ${info.output || info.status}`,
+    );
+  }
+
+  const create = runWranglerR2Command(
+    wranglerBin,
+    ["r2", "bucket", "create", bucketName],
+    accountId,
+    apiToken,
+    spawnImpl,
+  );
+
+  if (create.status === 0) {
+    return { created: true, skipped: false, output: create.output };
+  }
+
+  if (create.code === WRANGLER_R2_BUCKET_ALREADY_OWNED_CODE) {
+    return { created: false, skipped: true, output: create.output };
+  }
+
+  if (create.code === WRANGLER_R2_BUCKET_NAME_CONFLICT_CODE) {
+    throw new Error(
+      `R2 bucket name ${bucketName} is already used by another account [code: ${WRANGLER_R2_BUCKET_NAME_CONFLICT_CODE}].`,
+    );
+  }
+
+  throw new Error(`Failed to create R2 bucket ${bucketName}: ${create.output || create.status}`);
 }
 
 const thisFile = fileURLToPath(import.meta.url);
