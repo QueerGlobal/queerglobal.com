@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Load TF_VAR_bootstrap_state_passphrase from the bootstrap Doppler config, or create it on first run.
+# Keep the passphrase out of xtrace output even when the caller runs with set -x.
+_passphrase_xtrace=0
+case "$-" in *x*) _passphrase_xtrace=1 ;; esac
+{ set +x; } 2>/dev/null
 set -euo pipefail
 
 _self="${BASH_SOURCE[0]:-$0}"
@@ -53,4 +57,7 @@ TF_VAR_bootstrap_state_passphrase="$(<"$pass_file")"
 if [ "$_sourced" = 1 ]; then
   rm -f "$pass_file"
   pass_file=""
+fi
+if [ "$_passphrase_xtrace" = 1 ]; then
+  set -x
 fi

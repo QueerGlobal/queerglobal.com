@@ -23,7 +23,7 @@ fi
 _on_exit() {
   local code=$?
   if [ "$apply_started" = 1 ]; then
-    if ! BOOTSTRAP_BACKUP_REQUIRE_STATE=1 bash "$dir/scripts/bootstrap-state-backup.sh" "$bootstrap_dir"; then
+    if ! bash "$dir/scripts/bootstrap-state-backup.sh" "$bootstrap_dir"; then
       code=1
     fi
   fi

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apply the main infra stack from a CI plan, or break-glass with Mark's explicit approval.
+# Apply the main infra stack only from a plan stamped earlier in the same gated workflow run.
 set -euo pipefail
 
 umask 077
@@ -65,35 +65,8 @@ apply_ci_plan() {
   rm -rf "$tmp"
 }
 
-apply_break_glass() {
-  local tmp plan
-  tmp=$(mktemp -d)
-  plan="$tmp/tfplan"
-  {
-    echo "bucket = \"$TF_STATE_BUCKET\""
-    echo "key = \"${TF_STATE_KEY:-queerglobal-grandkru/terraform.tfstate}\""
-    echo "region = \"${TF_STATE_REGION:-auto}\""
-    echo "endpoint = \"$TF_STATE_ENDPOINT\""
-    echo "skip_credentials_validation = true"
-    echo "skip_metadata_api_check = true"
-    echo "skip_region_validation = true"
-  } >"$tmp/backend.hcl"
-  tofu -chdir="$ROOT/infra" init -backend-config="$tmp/backend.hcl" -input=false
-  tofu -chdir="$ROOT/infra" validate -no-color
-  tofu -chdir="$ROOT/infra" plan -input=false -out="$plan"
-  if ! tofu -chdir="$ROOT/infra" apply -auto-approve -input=false "$plan"; then
-    on_err $LINENO
-    exit 1
-  fi
-  rm -f "$plan"
-  rm -rf "$tmp"
-}
-
-if [ -n "${INFRA_CI_PLAN_DIR:-}" ]; then
-  apply_ci_plan
-elif [ "${INFRA_BREAK_GLASS:-}" = "1" ]; then
-  apply_break_glass
-else
-  echo "Refusing to plan/apply infra outside CI. Set INFRA_CI_PLAN_DIR with a stamped plan from this run, or INFRA_BREAK_GLASS=1 for documented break-glass (Mark approves)." >&2
+if [ -z "${INFRA_CI_PLAN_DIR:-}" ]; then
+  echo "Refusing to apply infra outside the gated Deploy production workflow: INFRA_CI_PLAN_DIR must hold a plan stamped by this run." >&2
   exit 1
 fi
+apply_ci_plan

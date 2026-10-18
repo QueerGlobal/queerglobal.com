@@ -152,5 +152,10 @@ describe("deploy-production jobs that verify the environment", () => {
       const job = extractJobBlock(yaml, jobId);
       assert.match(job, /actions: read/);
     });
+
+    it(`${jobId} waits for the production environment approval`, () => {
+      const job = extractJobBlock(yaml, jobId);
+      assert.match(job, /^    environment: production$/m);
+    });
   }
 });

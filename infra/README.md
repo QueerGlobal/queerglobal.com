@@ -103,15 +103,11 @@ tofu -chdir=infra/bootstrap test
 
 Normal deploys run **OpenTofu plan** then **apply** in GitHub Actions: `run-infra-tofu-plan.sh` writes a plan and stamps it with `GITHUB_RUN_ID`; `run-infra-tofu-apply.sh` refuses to apply unless the stamp matches the current run. The deploy job requires the **production** environment (manual approval).
 
-## Manual apply (break-glass)
+## No local apply
 
-Only when CI is unavailable and **Mark** has explicitly approved break-glass use. The script refuses to plan/apply outside CI unless you set `INFRA_BREAK_GLASS=1` (it still plans locally before apply; it does not accept an arbitrary plan file from disk). Prefer re-running the gated workflow when CI returns.
+There is no break-glass apply script. `scripts/run-infra-tofu-apply.sh` applies only a plan that `scripts/run-infra-tofu-plan.sh` wrote and stamped earlier in the same workflow run, inside a job that needs the **production** environment approval. Run without that stamped plan, it refuses before calling OpenTofu.
 
-```bash
-export INFRA_BREAK_GLASS=1
-doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
-  bash scripts/run-infra-tofu-apply.sh
-```
+The stamp stops the scripts from being used outside the gated workflow by mistake. It is not a security boundary: anyone holding the production credentials could run OpenTofu directly. The real boundary is that those credentials live only in the Doppler `prd` config, read by the `DOPPLER_TOKEN` in the protected **production** environment. If GitHub Actions is unavailable, production changes wait until it is back, unless Mark approves a specific manual change.
 
 Do not attach `queerglobal.com` from this stack.
 

@@ -102,7 +102,7 @@ On first bootstrap, set `BOOTSTRAP_FIRST_RUN=1` and run apply: `scripts/bootstra
 
 The passphrase must be at least 16 characters.
 
-After each successful apply, `bash scripts/bootstrap-tofu-apply.sh` (or `bash scripts/bootstrap-state-backup.sh`) pipes the encrypted local state into Doppler. If backup fails, the run fails and the local state path is printed. If apply finished but the state file is missing, backup exits with an error (no silent skip).
+After each successful apply, `bash scripts/bootstrap-tofu-apply.sh` (or `bash scripts/bootstrap-state-backup.sh`) pipes the encrypted local state into Doppler. If backup fails, the run fails and the local state path is printed. If the state file is missing, backup exits with an error instead of skipping.
 
 ```bash
 cat infra/bootstrap/terraform.tfstate | doppler secrets set BOOTSTRAP_STATE_ENCRYPTED \

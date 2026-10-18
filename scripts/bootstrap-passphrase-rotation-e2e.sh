@@ -12,7 +12,7 @@ OLD2='bootstrap-rotation-new-passphrase'
 NEW2='bootstrap-rotation-newer-passphrase'
 
 mkdir -p "$work/fixture"
-cp "$root/infra/bootstrap/versions.tf" "$root/infra/bootstrap/variables.tf" "$work/fixture/"
+cp "$root/infra/bootstrap/versions.tf" "$root/infra/bootstrap/variables.tf" "$root/infra/bootstrap/production-reviewers.auto.tfvars.json" "$work/fixture/"
 cat >"$work/fixture/main.tf" <<'EOF'
 resource "terraform_data" "marker" {
   input = "bootstrap-passphrase-rotation-e2e"

@@ -29,6 +29,9 @@ const FAKES = Object.freeze({
   TF_VAR_doppler_management_token: "dp.pt.fake-mgmt-argv-0008",
 });
 
+/** Stored in the stand-in Doppler bootstrap config; loaded by bootstrap-passphrase-env.sh. */
+const BOOTSTRAP_PASSPHRASE = "mock-bootstrap-passphrase-for-ci-long-enough";
+
 const realBin = (name) => execFileSync("bash", ["-c", `command -v ${name}`], { encoding: "utf8" }).trim();
 const REAL = { bash: realBin("bash"), git: realBin("git"), node: process.execPath };
 
@@ -106,7 +109,7 @@ function runAll(root) {
   execFileSync(REAL.git, ["init", "-q", checkout]);
   execFileSync(REAL.git, ["-C", checkout, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "c"]);
   fs.writeFileSync(path.join(root, "infra", "bootstrap", "terraform.tfstate"), '{"encrypted":true}');
-  fs.writeFileSync(path.join(root, "bootstrap-passphrase.txt"), "mock-bootstrap-passphrase-for-ci-long-enough");
+  fs.writeFileSync(path.join(root, "bootstrap-passphrase.txt"), BOOTSTRAP_PASSPHRASE);
   fs.mkdirSync(path.join(root, "ci-plan"), { recursive: true });
   fs.writeFileSync(path.join(root, "first-deploy"), "__NO_PREVIOUS_WORKER__\n");
   fs.writeFileSync(path.join(root, "existing"), `${PREVIOUS_VERSION}\n`);
@@ -150,7 +153,12 @@ ${step("OpenTofu apply production plan")}`,
     "apply with failing tofu": [
       root,
       ["scripts/run-infra-tofu-apply.sh"],
-      { ARGV_TOFU_FAIL_APPLY: "1", INFRA_BREAK_GLASS: "1" },
+      {
+        ARGV_TOFU_FAIL_APPLY: "1",
+        GITHUB_ACTIONS: "true",
+        GITHUB_RUN_ID: "1",
+        INFRA_CI_PLAN_DIR: path.join(root, "ci-plan"),
+      },
     ],
     "workflow first-deploy cleanup": [root, ["-ec", step("Roll back Worker on smoke or recheck failure").replaceAll(".previous-worker-version", "first-deploy")], {}],
     "workflow Worker rollback": [root, ["-ec", step("Roll back Worker on smoke or recheck failure").replaceAll(".previous-worker-version", "existing")], {}],
@@ -190,6 +198,9 @@ function assertNoSecretOnArgv(records) {
       if (line.includes(value)) {
         throw new Error(`secret on argv: ${name} via ${cmd}`);
       }
+    }
+    if (line.includes(BOOTSTRAP_PASSPHRASE)) {
+      throw new Error(`secret on argv: bootstrap state passphrase via ${cmd}`);
     }
     if (/x-access-token:[^@\s]+@/.test(line)) {
       throw new Error(`secret on argv: credentials in a URL via ${cmd}`);
@@ -245,7 +256,7 @@ describe("no secrets on any command line (real scripts through argv shims)", { c
 
   it("mutation: Cloudflare token passed to curl as a header argument is caught", () => {
     const root = workTree((r) => {
-      const p = path.join(r, "scripts/run-infra-tofu-apply.sh");
+      const p = path.join(r, "scripts/run-infra-tofu-plan.sh");
       const src = fs.readFileSync(p, "utf8");
       const mutated = src.replace(
         'tofu -chdir="$ROOT/infra" validate -no-color',

@@ -108,8 +108,8 @@ to roll back to. The deploy workflow runs
 automatically. It refuses to run unless that file holds the first-deploy marker,
 validates, saves a targeted destroy plan, checks that the plan only deletes this
 Worker and its custom domain, and only then applies that plan. Failures are
-reported to Sentry when `SENTRY_DSN` is set. Do not run `tofu destroy` by hand unless
-CI is unavailable; break-glass manual apply is documented in [infra/README.md](infra/README.md).
+reported to Sentry when `SENTRY_DSN` is set. Do not run `tofu destroy` by hand; there is
+no local apply path (see [infra/README.md](infra/README.md)).
 
 ### Notes for running this
 
@@ -133,7 +133,7 @@ Besides one-time bootstrap, GitHub environment approval on each deploy, and stor
 [infra/bootstrap/README.md](infra/bootstrap/README.md)), no other manual infrastructure
 steps are required. See [infra/README.md](infra/README.md).
 
-Break-glass manual apply (when CI is unavailable): see [infra/README.md](infra/README.md).
+There is no local apply path; production changes go through the gated workflow. See [infra/README.md](infra/README.md).
 
 ## Later
 

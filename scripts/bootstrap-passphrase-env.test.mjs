@@ -44,5 +44,77 @@ exit 0`,
     const combined = `${r.stdout}${r.stderr}`;
     assert.doesNotMatch(combined, /mock-bootstrap-passphrase/);
     assert.doesNotMatch(combined, /generated-passphrase/);
+    assert.ok(!combined.includes(fs.readFileSync(passFile, "utf8")), "generated passphrase was printed");
+  });
+
+  it("stores a fresh random passphrase on each first bootstrap", () => {
+    const stored = [];
+    for (let i = 0; i < 2; i += 1) {
+      const work = fs.mkdtempSync(path.join(os.tmpdir(), "pass-gen-"));
+      try {
+        const passFile = path.join(work, "stored");
+        fs.writeFileSync(
+          path.join(work, "doppler"),
+          `#!/usr/bin/env bash
+if [[ "$*" == *secrets*get*BOOTSTRAP_STATE_PASSPHRASE* ]]; then
+  if [ -s "${passFile}" ]; then cat "${passFile}"; exit 0; fi
+  exit 1
+elif [[ "$*" == *secrets*set*BOOTSTRAP_STATE_PASSPHRASE* ]]; then
+  cat > "${passFile}"
+fi
+exit 0
+`,
+          { mode: 0o755 },
+        );
+        const r = spawnSync("bash", ["-c", "source scripts/bootstrap-passphrase-env.sh"], {
+          env: {
+            PATH: `${work}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
+            BOOTSTRAP_FIRST_RUN: "1",
+            TF_VAR_doppler_project: "queerglobal",
+            TMPDIR: work,
+          },
+          encoding: "utf8",
+        });
+        assert.equal(r.status, 0, r.stderr);
+        stored.push(fs.readFileSync(passFile, "utf8"));
+      } finally {
+        fs.rmSync(work, { recursive: true, force: true });
+      }
+    }
+    for (const value of stored) {
+      assert.match(value, /^[A-Za-z0-9+/]{43}=$/, "expected 32 random bytes in base64");
+    }
+    assert.notEqual(stored[0], stored[1], "two first bootstraps stored the same passphrase");
+  });
+
+  it("keeps the passphrase out of xtrace output and restores xtrace for the caller", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "pass-xtrace-"));
+    try {
+      const stored = "xtrace-check-passphrase-0123456789";
+      fs.writeFileSync(path.join(work, "stored"), stored);
+      fs.writeFileSync(
+        path.join(work, "doppler"),
+        `#!/usr/bin/env bash\nif [[ "$*" == *secrets*get*BOOTSTRAP_STATE_PASSPHRASE* ]]; then cat "${path.join(work, "stored")}"; exit 0; fi\nexit 1\n`,
+        { mode: 0o755 },
+      );
+      const r = spawnSync(
+        "bash",
+        ["-xc", 'source scripts/bootstrap-passphrase-env.sh && : after-source && test "${#TF_VAR_bootstrap_state_passphrase}" -gt 16'],
+        {
+          env: {
+            PATH: `${work}:/usr/bin:/bin`,
+            TF_VAR_doppler_project: "queerglobal",
+            TF_VAR_doppler_bootstrap_config: "bootstrap",
+            TMPDIR: work,
+          },
+          encoding: "utf8",
+        },
+      );
+      assert.equal(r.status, 0, r.stderr);
+      assert.ok(!`${r.stdout}${r.stderr}`.includes(stored), "passphrase reached xtrace output");
+      assert.match(r.stderr, /\+ : after-source/, "xtrace was not restored for the caller");
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
   });
 });

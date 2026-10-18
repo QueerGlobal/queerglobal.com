@@ -23,7 +23,6 @@ describe("bootstrap-state-backup.sh", () => {
         PATH: `${doppler}:/usr/bin:/bin`,
         TF_VAR_doppler_project: "queerglobal",
         TF_VAR_doppler_bootstrap_config: "bootstrap",
-        BOOTSTRAP_BACKUP_REQUIRE_STATE: "1",
       },
       encoding: "utf8",
     });
@@ -33,7 +32,7 @@ describe("bootstrap-state-backup.sh", () => {
     assert.ok(fs.existsSync(path.join(stateDir, "terraform.tfstate")));
   });
 
-  it("treats a missing state file after apply as an error when required", () => {
+  it("treats a missing state file as an error", () => {
     const work = fs.mkdtempSync(path.join(os.tmpdir(), "backup-missing-"));
     const stateDir = path.join(work, "bootstrap");
     fs.mkdirSync(stateDir, { recursive: true });
@@ -42,11 +41,10 @@ describe("bootstrap-state-backup.sh", () => {
       env: {
         PATH: `${doppler}:/usr/bin:/bin`,
         TF_VAR_doppler_project: "queerglobal",
-        BOOTSTRAP_BACKUP_REQUIRE_STATE: "1",
       },
       encoding: "utf8",
     });
     assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /state file missing after apply/);
+    assert.match(r.stderr, /state file missing; backup refused/);
   });
 });

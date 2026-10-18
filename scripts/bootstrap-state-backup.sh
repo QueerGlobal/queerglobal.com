@@ -6,15 +6,10 @@ bootstrap_dir="${1:-infra/bootstrap}"
 state_file="$bootstrap_dir/terraform.tfstate"
 project="${TF_VAR_doppler_project:-}"
 config="${TF_VAR_doppler_bootstrap_config:-bootstrap}"
-require_state="${BOOTSTRAP_BACKUP_REQUIRE_STATE:-0}"
 
 if [ ! -f "$state_file" ]; then
-  if [ "$require_state" = "1" ]; then
-    echo "Bootstrap state file missing after apply; backup refused: $state_file" >&2
-    exit 1
-  fi
-  echo "No bootstrap state at $state_file; skip backup." >&2
-  exit 0
+  echo "Bootstrap state file missing; backup refused: $state_file" >&2
+  exit 1
 fi
 
 if [ -z "$project" ]; then
