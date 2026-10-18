@@ -130,55 +130,95 @@ describe("bootstrap-tofu-apply.sh", () => {
   });
 });
 
-describe("bootstrap-passphrase-rotate.sh Doppler promote order", () => {
-  it("pipes NEXT from doppler get into PASSPHRASE set before deleting NEXT", () => {
-    const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "promote-")), "order.log");
-    const bin = stubBin(
-      "doppler",
-      `echo "$*" >> "${log}"
-if [[ "$*" == *" secrets get "* ]]; then echo "next-passphrase-value"; fi
+const OLD_PASS = "old-passphrase-0000000000";
+const NEW_PASS = "new-passphrase-1111111111";
+
+/**
+ * Run the real rotate script with stub tofu and doppler on PATH.
+ * @param {{ stdin: string, showOutput?: string, dopplerNext?: string }} opts
+ */
+function runRotate(opts) {
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), "rotate-"));
+  const state = path.join(work, "state");
+  fs.mkdirSync(state);
+  fs.writeFileSync(path.join(state, "terraform.tfstate"), '{"encrypted":"stand-in"}');
+  const log = path.join(work, "doppler.log");
+  const tofu = stubBin(
+    "tofu",
+    `case "$*" in
+  *" show "*|*" show") printf '%s\\n' "${opts.showOutput ?? "Error: decryption failed for all provided methods"}" >&2; exit 1 ;;
+  *) exit 0 ;;
+esac`,
+  );
+  const doppler = stubBin(
+    "doppler",
+    `stdin=""
+if [ "$2" = "set" ]; then stdin="$(cat)"; fi
+printf '%s\\t%s\\n' "$*" "$stdin" >> "${log}"
+if [ "$2" = "get" ]; then printf '%s' "${opts.dopplerNext ?? NEW_PASS}"; fi
 exit 0`,
-    );
-    const promoteFragment = `
-      set -euo pipefail
-      export TF_VAR_doppler_project=queerglobal
-      export TF_VAR_doppler_bootstrap_config=bootstrap
-      echo backup >> "${log}"
-      doppler secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT --plain \\
-        -p "$TF_VAR_doppler_project" -c "$TF_VAR_doppler_bootstrap_config" \\
-        | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE \\
-          -p "$TF_VAR_doppler_project" -c "$TF_VAR_doppler_bootstrap_config"
-      doppler secrets delete BOOTSTRAP_STATE_PASSPHRASE_NEXT \\
-        -p "$TF_VAR_doppler_project" -c "$TF_VAR_doppler_bootstrap_config" --yes
-    `;
-    const r = spawnSync("bash", ["-c", promoteFragment], {
-      env: {
-        PATH: `${bin}:${process.env.PATH}`,
-        HOME: os.tmpdir(),
-      },
-      encoding: "utf8",
-    });
+  );
+  const r = spawnSync("bash", ["scripts/bootstrap-passphrase-rotate.sh", state], {
+    input: opts.stdin,
+    env: {
+      PATH: `${tofu}:${doppler}:${process.env.PATH}`,
+      HOME: os.tmpdir(),
+      TF_VAR_bootstrap_state_passphrase: OLD_PASS,
+      TF_VAR_bootstrap_state_passphrase_next: NEW_PASS,
+      TF_VAR_doppler_project: "queerglobal",
+      TF_VAR_doppler_bootstrap_config: "bootstrap",
+      BOOTSTRAP_ROTATE_PROMOTE_DOPPLER: "1",
+    },
+    encoding: "utf8",
+  });
+  const calls = fs.existsSync(log)
+    ? fs.readFileSync(log, "utf8").trim().split("\n").map((l) => {
+        const [argv, stdin] = l.split("\t");
+        return { argv, stdin };
+      })
+    : [];
+  return { ...r, calls };
+}
+
+describe("bootstrap-passphrase-rotate.sh promote (real script, stub tofu and doppler)", () => {
+  it("backs up, reads NEXT, sets PASSPHRASE from stdin, then deletes NEXT; no secret on argv", () => {
+    const r = runRotate({ stdin: "rotate\npromote\n" });
     assert.equal(r.status, 0, r.stderr);
-    const lines = fs.readFileSync(log, "utf8").trim().split("\n");
-    const backupIdx = lines.findIndex((l) => l === "backup");
-    const setIdx = lines.findIndex((l) => l.includes("secrets set") && l.includes("BOOTSTRAP_STATE_PASSPHRASE"));
-    const getIdx = lines.findIndex((l) => l.includes("secrets get") && l.includes("BOOTSTRAP_STATE_PASSPHRASE_NEXT"));
-    const deleteIdx = lines.findIndex((l) => l.includes("secrets delete") && l.includes("BOOTSTRAP_STATE_PASSPHRASE_NEXT"));
-    assert.ok(backupIdx >= 0);
-    assert.ok(getIdx >= 0);
-    assert.ok(setIdx >= 0);
-    assert.ok(deleteIdx >= 0);
-    assert.ok(backupIdx < getIdx);
-    assert.ok(getIdx < setIdx);
-    assert.ok(setIdx < deleteIdx);
+    assert.deepEqual(
+      r.calls.map((c) => c.argv.split(" ").slice(0, 3).join(" ")),
+      [
+        "secrets set BOOTSTRAP_STATE_ENCRYPTED",
+        "secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT",
+        "secrets set BOOTSTRAP_STATE_PASSPHRASE",
+        "secrets delete BOOTSTRAP_STATE_PASSPHRASE_NEXT",
+      ],
+    );
+    assert.equal(r.calls[0].stdin, '{"encrypted":"stand-in"}');
+    assert.equal(r.calls[2].stdin, NEW_PASS);
+    for (const c of r.calls) {
+      assert.doesNotMatch(c.argv, new RegExp(`${OLD_PASS}|${NEW_PASS}`));
+    }
   });
 
-  it("embeds the same promote order in bootstrap-passphrase-rotate.sh", () => {
-    const src = fs.readFileSync("scripts/bootstrap-passphrase-rotate.sh", "utf8");
-    const backupPos = src.indexOf("bootstrap-state-backup.sh");
-    const getPos = src.indexOf("secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT");
-    const setPos = src.indexOf("secrets set BOOTSTRAP_STATE_PASSPHRASE");
-    const deletePos = src.indexOf("secrets delete BOOTSTRAP_STATE_PASSPHRASE_NEXT");
-    assert.ok(backupPos >= 0 && getPos > backupPos && setPos > getPos && deletePos > setPos);
+  it("touches Doppler not at all unless promote is typed", () => {
+    const r = runRotate({ stdin: "rotate\nno\n" });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /Promotion skipped/);
+    assert.deepEqual(r.calls, []);
+  });
+
+  it("refuses to promote when Doppler NEXT differs from the re-encryption passphrase", () => {
+    const r = runRotate({ stdin: "rotate\npromote\n", dopplerNext: "some-other-passphrase-22" });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /does not match/);
+    assert.equal(r.calls.some((c) => c.argv.startsWith("secrets set BOOTSTRAP_STATE_PASSPHRASE ")), false);
+    assert.equal(r.calls.some((c) => c.argv.startsWith("secrets delete")), false);
+  });
+
+  it("fails when the old passphrase is rejected for a reason other than decryption", () => {
+    const r = runRotate({ stdin: "rotate\npromote\n", showOutput: "Error: No value for required variable" });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /unexpected reason/);
+    assert.deepEqual(r.calls, []);
   });
 });

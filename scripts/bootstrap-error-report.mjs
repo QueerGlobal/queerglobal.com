@@ -15,6 +15,37 @@ function errorMessage(err) {
   return String(err);
 }
 
+const SECRET_ENV_NAMES = [
+  "CLOUDFLARE_API_TOKEN",
+  "TF_VAR_github_token",
+  "TF_VAR_doppler_management_token",
+  "TF_VAR_bootstrap_state_passphrase",
+  "TF_VAR_bootstrap_state_passphrase_next",
+  "DOPPLER_TOKEN",
+  "SENTRY_DSN",
+];
+const TOKEN_PATTERNS = [/\bgh[pousr]_[A-Za-z0-9_]+/g, /\bgithub_pat_[A-Za-z0-9_]+/g, /\bdp\.(pt|st|sa|ct|scim|audit)\.[A-Za-z0-9_.-]+/g, /Bearer\s+\S+/gi];
+
+/**
+ * Remove known secret values and token-shaped strings before anything leaves the machine.
+ * @param {string} text
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {string}
+ */
+export function scrubSecrets(text, env = process.env) {
+  let out = text;
+  for (const name of SECRET_ENV_NAMES) {
+    const value = env[name];
+    if (value && value.length >= 4) {
+      out = out.split(value).join("[redacted]");
+    }
+  }
+  for (const pattern of TOKEN_PATTERNS) {
+    out = out.replace(pattern, "[redacted]");
+  }
+  return out;
+}
+
 /**
  * @param {string} dsn
  * @param {unknown} err
@@ -26,7 +57,7 @@ async function defaultCapture(dsn, err, fetchImpl) {
   const sentryUrl = `${url.protocol}//${url.host}/api/${projectId}/store/`;
   const body = JSON.stringify({
     event_id: crypto.randomUUID().replace(/-/g, ""),
-    message: errorMessage(err),
+    message: scrubSecrets(errorMessage(err)),
     level: "error",
     platform: "node",
     tags: { component: "bootstrap-cli" },
@@ -38,6 +69,7 @@ async function defaultCapture(dsn, err, fetchImpl) {
       "X-Sentry-Auth": `Sentry sentry_version=7, sentry_key=${url.username}`,
     },
     body,
+    signal: AbortSignal.timeout(3000),
   });
 }
 
@@ -61,7 +93,11 @@ export function createBootstrapErrorReporter(options = {}) {
       if (!dsn) {
         return;
       }
-      await capture(dsn, err);
+      try {
+        await capture(dsn, err);
+      } catch {
+        // Reporting must never mask the original failure or hang the CLI.
+      }
     },
   };
 }

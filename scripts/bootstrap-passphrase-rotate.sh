@@ -91,10 +91,16 @@ if [ "${BOOTSTRAP_ROTATE_PROMOTE_DOPPLER:-}" = "1" ]; then
   fi
   # Backup first: the Doppler backup must match the passphrase that becomes current.
   bash "$(dirname "$0")/bootstrap-state-backup.sh" "$dir"
-  doppler secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT --plain \
-    -p "$TF_VAR_doppler_project" -c "$config" \
-    | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE \
-      -p "$TF_VAR_doppler_project" -c "$config"
+  # Read NEXT first (no concurrent pipe): a failed get must never write an empty passphrase.
+  next_from_doppler="$(doppler secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT --plain \
+    -p "$TF_VAR_doppler_project" -c "$config")"
+  if [ "$next_from_doppler" != "$new" ]; then
+    echo "BOOTSTRAP_STATE_PASSPHRASE_NEXT in Doppler does not match the passphrase the state was re-encrypted with; not promoting." >&2
+    exit 1
+  fi
+  printf '%s' "$next_from_doppler" | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE \
+    -p "$TF_VAR_doppler_project" -c "$config"
+  unset next_from_doppler
   doppler secrets delete BOOTSTRAP_STATE_PASSPHRASE_NEXT -p "$TF_VAR_doppler_project" -c "$config" --yes
 fi
 

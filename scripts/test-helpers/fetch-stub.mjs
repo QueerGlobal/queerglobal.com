@@ -7,8 +7,17 @@ export const ZONE_ID = "4f8b3c2d1e0a9b8c7d6e5f4a3b2c1d0e";
  * @returns {typeof fetch}
  */
 export function bootstrapStandInFetch() {
-  return async (url) => {
+  return async (url, init = {}) => {
     const pathStr = String(url);
+    const auth = init.headers?.Authorization ?? "";
+    if (!/^Bearer \S+$/.test(auth)) {
+      return {
+        ok: false,
+        status: 401,
+        statusText: "Unauthorized",
+        json: async () => ({ success: false, errors: [{ code: 10000, message: "stand-in: missing bearer token" }], messages: [] }),
+      };
+    }
     if (pathStr.includes(`/accounts/${ACCOUNT_ID}/tokens/verify`)) {
       return {
         ok: true,
@@ -43,6 +52,10 @@ export function bootstrapStandInFetch() {
       };
     }
     if (pathStr.includes("/zones?")) {
+      const query = new URL(pathStr).searchParams;
+      if (query.get("account.id") !== ACCOUNT_ID || query.get("name") !== "grandkru.com") {
+        throw new Error(`bootstrap stand-in fetch: zone lookup must filter by name and account.id: ${pathStr}`);
+      }
       return {
         ok: true,
         json: async () => ({
@@ -85,12 +98,4 @@ export function fetchWith(override) {
     }
     return base(url, init);
   };
-}
-
-/**
- * Realistic Cloudflare shapes for tests that need explicit verify + zone payloads.
- * @returns {typeof fetch}
- */
-export function cloudflareFullShapeFetch() {
-  return bootstrapStandInFetch();
 }

@@ -18,6 +18,7 @@ rm -rf "$work/bootstrap/.terraform"
 
 export TF_VAR_github_token=ghp_mock_bootstrap_token_000000000000
 export TF_VAR_doppler_management_token=dp.pt.mock_management_token_000000000000
+export TF_VAR_doppler_project=queerglobal
 export TF_VAR_doppler_config=prd
 export TF_VAR_doppler_bootstrap_config=bootstrap
 export TF_VAR_bootstrap_state_passphrase=mock-bootstrap-passphrase-for-ci

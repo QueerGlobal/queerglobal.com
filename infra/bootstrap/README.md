@@ -69,7 +69,7 @@ node scripts/preflight-bootstrap.mjs
 
 Preflight order: Cloudflare capability probes (verify active, then R2, then zone), `GET /repos/QueerGlobal/queerglobal.com` (`permissions.admin`), Doppler project read with the management token.
 
-Bootstrap Node CLIs (`preflight-bootstrap.mjs`, `preflight-bootstrap-cloudflare.mjs`, and the e2e preflight helper) send uncaught errors to Sentry when **`SENTRY_DSN`** is set in the environment. When unset, reporting is a no-op. Payloads include only the error message and a `bootstrap-cli` tag (no tokens or other secrets).
+Bootstrap Node CLIs (`preflight-bootstrap.mjs`, `preflight-bootstrap-cloudflare.mjs`, and the e2e preflight helper) send uncaught errors to Sentry when **`SENTRY_DSN`** is set in the environment. When unset, reporting is a no-op. Messages are scrubbed of known secret values and token-shaped strings before sending; payloads include only the scrubbed message and a `bootstrap-cli` tag.
 
 ## Automated tests
 
@@ -164,19 +164,18 @@ bash scripts/bootstrap-passphrase-rotate.sh
 Promote the new passphrase in Doppler (backup first so `BOOTSTRAP_STATE_ENCRYPTED` matches the passphrase that becomes current), then remove `BOOTSTRAP_STATE_PASSPHRASE_NEXT`:
 
 ```bash
+config="${TF_VAR_doppler_bootstrap_config:-bootstrap}"
 bash scripts/bootstrap-state-backup.sh
-doppler secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT --plain \
-  -p "$TF_VAR_doppler_project" \
-  -c "$TF_VAR_doppler_bootstrap_config" \
-  | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE \
-    -p "$TF_VAR_doppler_project" \
-    -c "$TF_VAR_doppler_bootstrap_config"
+next_from_doppler="$(doppler secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT --plain -p "$TF_VAR_doppler_project" -c "$config")"
+if [ "$next_from_doppler" != "$TF_VAR_bootstrap_state_passphrase_next" ]; then echo "NEXT does not match; not promoting." >&2; exit 1; fi
+printf '%s' "$next_from_doppler" | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE -p "$TF_VAR_doppler_project" -c "$config"
+unset next_from_doppler
 doppler secrets delete BOOTSTRAP_STATE_PASSPHRASE_NEXT \
   -p "$TF_VAR_doppler_project" \
   -c "$TF_VAR_doppler_bootstrap_config" --yes
 ```
 
-Or set `BOOTSTRAP_ROTATE_PROMOTE_DOPPLER=1` when running `bash scripts/bootstrap-passphrase-rotate.sh`. After rotation succeeds, type **`promote`** when prompted; the script backs up state, pipes `BOOTSTRAP_STATE_PASSPHRASE_NEXT` into `BOOTSTRAP_STATE_PASSPHRASE`, then deletes `_NEXT`.
+Or set `BOOTSTRAP_ROTATE_PROMOTE_DOPPLER=1` when running `bash scripts/bootstrap-passphrase-rotate.sh`. After rotation succeeds, type **`promote`** when prompted; the script backs up state, reads `BOOTSTRAP_STATE_PASSPHRASE_NEXT`, verifies it matches the new passphrase, sets `BOOTSTRAP_STATE_PASSPHRASE`, then deletes `_NEXT`.
 
 ## Rotate GitHub DOPPLER_TOKEN
 
