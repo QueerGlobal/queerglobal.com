@@ -6,19 +6,20 @@ import {
   preflightBootstrapDopplerProject,
   preflightBootstrapGithubAdmin,
 } from "./preflight-bootstrap.mjs";
-
-const ACCOUNT_ID = "0123456789abcdef0123456789abcdef";
+import { ACCOUNT_ID, bootstrapStandInFetch, fetchWith } from "./test-helpers/fetch-stub.mjs";
 
 describe("preflight mutation regressions", () => {
+  it("baseline passes when all Cloudflare probes succeed", async () => {
+    const result = await preflightBootstrapCloudflare({
+      token: "t",
+      accountId: ACCOUNT_ID,
+      fetchImpl: bootstrapStandInFetch(),
+    });
+    assert.deepEqual(result, { ok: true });
+  });
+
   it("does not treat Cloudflare deny as allow (403 on R2 probe fails preflight)", async () => {
-    const fetchImpl = async (url) => {
-      const path = String(url);
-      if (path.includes("/tokens/verify")) {
-        return {
-          ok: true,
-          json: async () => ({ success: true, result: { status: "active", id: "t" } }),
-        };
-      }
+    const fetchImpl = fetchWith((path) => {
       if (path.includes("/r2/buckets")) {
         return {
           ok: false,
@@ -26,40 +27,22 @@ describe("preflight mutation regressions", () => {
           json: async () => ({ success: false, errors: [{ message: "denied" }] }),
         };
       }
-      if (path.includes("/zones?")) {
-        return {
-          ok: true,
-          json: async () => ({
-            success: true,
-            result: [{ id: "z", name: "grandkru.com", account: { id: ACCOUNT_ID } }],
-          }),
-        };
-      }
-      if (path.endsWith("/tokens")) {
-        return { ok: true, json: async () => ({ success: true, result: [] }) };
-      }
-      throw new Error(path);
-    };
+      return undefined;
+    });
     const result = await preflightBootstrapCloudflare({
       token: "t",
       accountId: ACCOUNT_ID,
       fetchImpl,
     });
     assert.equal(result.ok, false);
+    if (result.ok) {
+      throw new Error("expected failure");
+    }
+    assert.match(result.error, /Cloudflare R2 probe failed/);
   });
 
   it("rejects grandkru.com when the zone is on another account", async () => {
-    const fetchImpl = async (url) => {
-      const path = String(url);
-      if (path.includes("/tokens/verify")) {
-        return {
-          ok: true,
-          json: async () => ({ success: true, result: { status: "active", id: "t" } }),
-        };
-      }
-      if (path.includes("/r2/buckets")) {
-        return { ok: true, json: async () => ({ success: true, result: [] }) };
-      }
+    const fetchImpl = fetchWith((path) => {
       if (path.includes("/zones?")) {
         return {
           ok: true,
@@ -69,11 +52,8 @@ describe("preflight mutation regressions", () => {
           }),
         };
       }
-      if (path.endsWith("/tokens")) {
-        return { ok: true, json: async () => ({ success: true, result: [] }) };
-      }
-      throw new Error(path);
-    };
+      return undefined;
+    });
     const result = await preflightBootstrapCloudflare({
       token: "t",
       accountId: ACCOUNT_ID,
@@ -87,14 +67,7 @@ describe("preflight mutation regressions", () => {
   });
 
   it("requires R2 probe success on the target account (account scope)", async () => {
-    const fetchImpl = async (url) => {
-      const path = String(url);
-      if (path.includes("/tokens/verify")) {
-        return {
-          ok: true,
-          json: async () => ({ success: true, result: { status: "active", id: "t" } }),
-        };
-      }
+    const fetchImpl = fetchWith((path) => {
       if (path.includes(`/accounts/${ACCOUNT_ID}/r2/buckets`)) {
         return {
           ok: false,
@@ -102,14 +75,18 @@ describe("preflight mutation regressions", () => {
           json: async () => ({ success: false, errors: [{ message: "Forbidden" }] }),
         };
       }
-      throw new Error(path);
-    };
+      return undefined;
+    });
     const result = await preflightBootstrapCloudflare({
       token: "t",
       accountId: ACCOUNT_ID,
       fetchImpl,
     });
     assert.equal(result.ok, false);
+    if (result.ok) {
+      throw new Error("expected failure");
+    }
+    assert.match(result.error, /Cloudflare R2 probe failed/);
   });
 
   it("fails when GitHub permissions.admin is false", async () => {

@@ -19,10 +19,17 @@ resource "terraform_data" "marker" {
 }
 EOF
 
-tofu -chdir="$work/fixture" init -input=false
-
+# variables.tf declares the bootstrap inputs; the fixture never uses them, but tofu requires values.
+export TF_VAR_cloudflare_account_id=0123456789abcdef0123456789abcdef
+export TF_VAR_github_token=ghp_mock_rotation_e2e
+export TF_VAR_doppler_management_token=dp.pt.mock_rotation_e2e
+export TF_VAR_doppler_project=mock-rotation-e2e
+export TF_VAR_production_reviewer_usernames='["octocat"]'
 export TF_VAR_bootstrap_state_passphrase="$OLD1"
 export TF_VAR_bootstrap_state_passphrase_next=""
+unset TF_ENCRYPTION
+
+tofu -chdir="$work/fixture" init -input=false
 tofu -chdir="$work/fixture" apply -auto-approve -input=false -lock=false
 cp "$work/fixture/terraform.tfstate" "$work/fixture/terraform.tfstate.backup"
 

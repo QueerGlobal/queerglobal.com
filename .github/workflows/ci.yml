@@ -52,5 +52,8 @@ jobs:
           tofu -chdir=infra test
           tofu -chdir=infra/bootstrap test
 
-      - name: Run tests and bootstrap e2e scripts
+      - name: Run unit tests
         run: npm test
+
+      - name: Run bootstrap e2e smoke scripts
+        run: npm run test:e2e

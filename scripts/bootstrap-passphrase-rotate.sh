@@ -65,9 +65,14 @@ TF_VAR_bootstrap_state_passphrase="$new"
 TF_VAR_bootstrap_state_passphrase_next=""
 tofu -chdir="$dir" plan -detailed-exitcode -input=false >/dev/null
 
-if TF_VAR_bootstrap_state_passphrase="$old" TF_VAR_bootstrap_state_passphrase_next="" \
-  tofu -chdir="$dir" plan -input=false >/dev/null 2>&1; then
+old_out="$(TF_VAR_bootstrap_state_passphrase="$old" TF_VAR_bootstrap_state_passphrase_next="" \
+  tofu -chdir="$dir" show -no-color 2>&1)" && {
   echo "Old passphrase still decrypts state; rotation failed." >&2
+  exit 1
+}
+if ! grep -q 'decryption failed' <<<"$old_out"; then
+  echo "Old-passphrase check failed for an unexpected reason:" >&2
+  printf '%s\n' "$old_out" >&2
   exit 1
 fi
 
@@ -77,8 +82,19 @@ export TF_VAR_bootstrap_state_passphrase_next=""
 if [ "${BOOTSTRAP_ROTATE_PROMOTE_DOPPLER:-}" = "1" ]; then
   : "${TF_VAR_doppler_project:?TF_VAR_doppler_project required to promote passphrases in Doppler}"
   config="${TF_VAR_doppler_bootstrap_config:-bootstrap}"
-  printf '%s' "$new" | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE \
-    -p "$TF_VAR_doppler_project" -c "$config"
+  printf 'Type promote to back up the re-encrypted state and make the new passphrase current in Doppler (%s/%s): ' \
+    "$TF_VAR_doppler_project" "$config"
+  read -r confirm_promote
+  if [ "$confirm_promote" != "promote" ]; then
+    echo "Promotion skipped. State is re-encrypted locally; back it up and promote BOOTSTRAP_STATE_PASSPHRASE_NEXT by hand." >&2
+    exit 1
+  fi
+  # Backup first: the Doppler backup must match the passphrase that becomes current.
+  bash "$(dirname "$0")/bootstrap-state-backup.sh" "$dir"
+  doppler secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT --plain \
+    -p "$TF_VAR_doppler_project" -c "$config" \
+    | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE \
+      -p "$TF_VAR_doppler_project" -c "$config"
   doppler secrets delete BOOTSTRAP_STATE_PASSPHRASE_NEXT -p "$TF_VAR_doppler_project" -c "$config" --yes
 fi
 

@@ -7,6 +7,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { runBootstrapCli } from "./bootstrap-error-report.mjs";
+
 const API = "https://api.cloudflare.com/client/v4";
 
 /**
@@ -149,34 +151,6 @@ export async function cloudflareProbeZoneOnAccount(input) {
 
 /**
  * @param {{
- *   token: string,
- *   accountId: string,
- *   fetchImpl: typeof fetch,
- * }} input
- * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
- */
-export async function cloudflareProbeAccountTokensWrite(input) {
-  const response = await cloudflareGet(
-    input.token,
-    `/accounts/${input.accountId}/tokens`,
-    input.fetchImpl,
-  );
-  const body = await response.json();
-  if (!response.ok || body.success !== true) {
-    const message = body.errors?.[0]?.message ?? response.statusText;
-    return {
-      ok: false,
-      error: `Cloudflare account API token write probe failed (GET /accounts/{id}/tokens): ${message}`,
-    };
-  }
-  if (!Array.isArray(body.result)) {
-    return { ok: false, error: "Cloudflare account tokens probe returned an unexpected payload." };
-  }
-  return { ok: true };
-}
-
-/**
- * @param {{
  *   accountId: string,
  *   zoneName?: string,
  *   token?: string,
@@ -217,11 +191,6 @@ export async function preflightBootstrapCloudflare(options) {
     return zone;
   }
 
-  const tokensWrite = await cloudflareProbeAccountTokensWrite({ token, accountId, fetchImpl });
-  if (!tokensWrite.ok) {
-    return tokensWrite;
-  }
-
   return { ok: true };
 }
 
@@ -243,5 +212,9 @@ if (
   process.argv[1] !== undefined &&
   path.resolve(process.argv[1]) === path.resolve(thisFile)
 ) {
-  process.exitCode = await runPreflightBootstrapCloudflareCli();
+  runBootstrapCli(async () => {
+    process.exitCode = await runPreflightBootstrapCloudflareCli();
+  }).catch(() => {
+    process.exitCode = 1;
+  });
 }

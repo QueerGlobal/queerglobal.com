@@ -8,6 +8,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { runBootstrapCli } from "./bootstrap-error-report.mjs";
 import { preflightBootstrapCloudflare } from "./preflight-bootstrap-cloudflare.mjs";
 
 /**
@@ -142,8 +143,7 @@ export async function runPreflightBootstrapCli(options = {}) {
     return 1;
   }
 
-  const markerPath =
-    options.markerPath ?? process.env.BOOTSTRAP_PREFLIGHT_MARKER ?? "";
+  const markerPath = options.markerPath ?? "";
   if (markerPath) {
     await fs.writeFile(markerPath, `${Date.now()}\n`, { mode: 0o600 });
   }
@@ -157,5 +157,9 @@ if (
   process.argv[1] !== undefined &&
   path.resolve(process.argv[1]) === path.resolve(thisFile)
 ) {
-  process.exitCode = await runPreflightBootstrapCli({});
+  runBootstrapCli(async () => {
+    process.exitCode = await runPreflightBootstrapCli({});
+  }).catch(() => {
+    process.exitCode = 1;
+  });
 }

@@ -23,7 +23,7 @@ Bootstrap apply fails if `doppler_config == doppler_bootstrap_config` (precondit
 
 Create a **user or account API token** that can pass the bootstrap preflight capability probes:
 
-- **Account API Tokens Write** (`GET /accounts/{id}/tokens`)
+- **Account API Tokens Write**: not provable by a read probe; the first apply fails at token creation if it is missing.
 - **Workers R2 Storage** read on this account (`GET /accounts/{id}/r2/buckets`; write is not provable by a read probe, so the first apply fails closed if R2 write is missing)
 - **Zone Read** for **`grandkru.com`** on this account (`GET /zones?name=grandkru.com&account.id={id}` must return exactly that zone)
 
@@ -67,7 +67,14 @@ export TF_VAR_production_reviewer_usernames='["your-github-username"]'
 node scripts/preflight-bootstrap.mjs
 ```
 
-Preflight order: Cloudflare capability probes (verify active, then R2, zone, account tokens), `GET /repos/QueerGlobal/queerglobal.com` (`permissions.admin`), Doppler project read with the management token.
+Preflight order: Cloudflare capability probes (verify active, then R2, then zone), `GET /repos/QueerGlobal/queerglobal.com` (`permissions.admin`), Doppler project read with the management token.
+
+Bootstrap Node CLIs (`preflight-bootstrap.mjs`, `preflight-bootstrap-cloudflare.mjs`, and the e2e preflight helper) send uncaught errors to Sentry when **`SENTRY_DSN`** is set in the environment. When unset, reporting is a no-op. Payloads include only the error message and a `bootstrap-cli` tag (no tokens or other secrets).
+
+## Automated tests
+
+- **`npm test`**: Node unit tests only (stand-in API responses; no OpenTofu or network).
+- **`npm run test:e2e`**: local bootstrap smoke scripts (`bootstrap-first-apply-e2e.sh`, `bootstrap-passphrase-rotation-e2e.sh`) after OpenTofu is installed. CI runs unit tests and e2e in separate steps.
 
 ## Bootstrap Doppler setup (after preflight)
 
@@ -152,21 +159,24 @@ export TF_VAR_bootstrap_state_passphrase_next="$(
 )"
 
 bash scripts/bootstrap-passphrase-rotate.sh
-bash scripts/bootstrap-state-backup.sh
 ```
 
-Promote the new passphrase in Doppler (stdin) and remove `BOOTSTRAP_STATE_PASSPHRASE_NEXT`:
+Promote the new passphrase in Doppler (backup first so `BOOTSTRAP_STATE_ENCRYPTED` matches the passphrase that becomes current), then remove `BOOTSTRAP_STATE_PASSPHRASE_NEXT`:
 
 ```bash
-printf '%s' "$TF_VAR_bootstrap_state_passphrase" | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE \
+bash scripts/bootstrap-state-backup.sh
+doppler secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT --plain \
   -p "$TF_VAR_doppler_project" \
-  -c "$TF_VAR_doppler_bootstrap_config"
+  -c "$TF_VAR_doppler_bootstrap_config" \
+  | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE \
+    -p "$TF_VAR_doppler_project" \
+    -c "$TF_VAR_doppler_bootstrap_config"
 doppler secrets delete BOOTSTRAP_STATE_PASSPHRASE_NEXT \
   -p "$TF_VAR_doppler_project" \
   -c "$TF_VAR_doppler_bootstrap_config" --yes
 ```
 
-Or set `BOOTSTRAP_ROTATE_PROMOTE_DOPPLER=1` when running `bash scripts/bootstrap-passphrase-rotate.sh` to perform that promotion automatically after a successful rotation.
+Or set `BOOTSTRAP_ROTATE_PROMOTE_DOPPLER=1` when running `bash scripts/bootstrap-passphrase-rotate.sh`. After rotation succeeds, type **`promote`** when prompted; the script backs up state, pipes `BOOTSTRAP_STATE_PASSPHRASE_NEXT` into `BOOTSTRAP_STATE_PASSPHRASE`, then deletes `_NEXT`.
 
 ## Rotate GitHub DOPPLER_TOKEN
 
@@ -207,6 +217,5 @@ These steps do **not** assume the leaked Cloudflare or GitHub tokens still work.
 ## Scripted checks
 
 ```bash
-bash scripts/bootstrap-first-apply-e2e.sh
-bash scripts/bootstrap-passphrase-rotation-e2e.sh
+npm run test:e2e
 ```
