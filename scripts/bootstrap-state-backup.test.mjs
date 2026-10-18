@@ -20,9 +20,10 @@ describe("bootstrap-state-backup.sh", () => {
     fs.mkdirSync(stateDir, { recursive: true });
     fs.writeFileSync(path.join(stateDir, "terraform.tfstate"), '{"encrypted":true}');
     const doppler = stubBin("doppler", 'echo "doppler failed" >&2; exit 1');
+    const nodeBin = path.dirname(process.execPath);
     const r = spawnSync("bash", ["scripts/bootstrap-state-backup.sh", stateDir], {
       env: {
-        PATH: `${doppler}:/usr/bin:/bin`,
+        PATH: `${doppler}:${nodeBin}:/usr/bin:/bin`,
         TF_VAR_doppler_project: "queerglobal",
         TF_VAR_doppler_bootstrap_config: "bootstrap",
       },
@@ -39,9 +40,10 @@ describe("bootstrap-state-backup.sh", () => {
     const stateDir = path.join(work, "bootstrap");
     fs.mkdirSync(stateDir, { recursive: true });
     const doppler = stubBin("doppler", "exit 0");
+    const nodeBin = path.dirname(process.execPath);
     const r = spawnSync("bash", ["scripts/bootstrap-state-backup.sh", stateDir], {
       env: {
-        PATH: `${doppler}:/usr/bin:/bin`,
+        PATH: `${doppler}:${nodeBin}:/usr/bin:/bin`,
         TF_VAR_doppler_project: "queerglobal",
       },
       encoding: "utf8",

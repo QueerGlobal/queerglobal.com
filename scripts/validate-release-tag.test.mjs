@@ -56,7 +56,7 @@ describe("verifyReleaseTag rollback guards", () => {
       execFileSync("git", ["init", "-q"], { cwd: repo, env: { ...process.env, HOME: repo, GIT_CONFIG_NOSYSTEM: "1" } });
       execFileSync("git", ["config", "user.email", "t@t"], { cwd: repo, env: { HOME: repo, GIT_CONFIG_NOSYSTEM: "1" } });
       execFileSync("git", ["config", "user.name", "t"], { cwd: repo, env: { HOME: repo, GIT_CONFIG_NOSYSTEM: "1" } });
-      const gitEnv = { ...process.env, HOME: repo, GIT_CONFIG_NOSYSTEM: "1" };
+      const gitEnv = { ...process.env, HOME: repo, TMPDIR: repo, GIT_CONFIG_NOSYSTEM: "1" };
       execFileSync("git", ["commit", "--allow-empty", "-q", "-m", "main"], {
         cwd: repo,
         env: gitEnv,
@@ -71,15 +71,67 @@ describe("verifyReleaseTag rollback guards", () => {
       const execGit = (args) => execFileSync("git", args, { cwd: repo, encoding: "utf8", env: gitEnv });
       verifyReleaseTagPointsAtEmbeddedSha({ tag, execGit });
       assert.throws(
-        () => verifyReleaseTagIsAncestorOfMain({ tag, execGit, mainRef: "refs/heads/main" }),
+        () =>
+          verifyReleaseTagIsAncestorOfMain({
+            tag,
+            execGit,
+            mainRef: "refs/heads/main",
+            fetchOriginMain: false,
+          }),
         /not an ancestor/,
       );
       execFileSync("git", ["checkout", "-q", "main"], { cwd: repo, env: gitEnv });
       const mainTag = `release/2-${mainSha}`;
       execFileSync("git", ["tag", mainTag], { cwd: repo, env: gitEnv });
-      verifyReleaseTagIsAncestorOfMain({ tag: mainTag, execGit, mainRef: "refs/heads/main" });
+      verifyReleaseTagIsAncestorOfMain({
+        tag: mainTag,
+        execGit,
+        mainRef: "refs/heads/main",
+        fetchOriginMain: false,
+      });
     } finally {
       rmTracked(repo);
+    }
+  });
+
+  it("uses origin/main after fetch when no local main branch exists", () => {
+    const root = mkdtempTracked("release-tag-git-");
+    try {
+      const bare = path.join(root, "origin.git");
+      const clone = path.join(root, "clone");
+      const gitEnv = {
+        ...process.env,
+        HOME: root,
+        TMPDIR: root,
+        GIT_CONFIG_NOSYSTEM: "1",
+        GIT_TERMINAL_PROMPT: "0",
+      };
+      execFileSync("git", ["init", "--bare", "-q", bare], { env: gitEnv });
+      execFileSync("git", ["init", "-q", clone], { env: gitEnv });
+      execFileSync("git", ["-C", clone, "config", "user.email", "t@t"], { env: gitEnv });
+      execFileSync("git", ["-C", clone, "config", "user.name", "t"], { env: gitEnv });
+      execFileSync("git", ["-C", clone, "commit", "--allow-empty", "-q", "-m", "first"], { env: gitEnv });
+      const firstSha = execFileSync("git", ["-C", clone, "rev-parse", "HEAD"], { encoding: "utf8", env: gitEnv }).trim();
+      execFileSync("git", ["-C", clone, "commit", "--allow-empty", "-q", "-m", "second"], { env: gitEnv });
+      execFileSync("git", ["-C", clone, "branch", "-M", "main"], { env: gitEnv });
+      execFileSync("git", ["-C", clone, "remote", "add", "origin", bare], { env: gitEnv });
+      execFileSync("git", ["-C", clone, "push", "-u", "origin", "main"], { env: gitEnv });
+      const tag = `release/3-${firstSha}`;
+      execFileSync("git", ["-C", clone, "tag", tag, firstSha], { env: gitEnv });
+      execFileSync("git", ["-C", clone, "push", "origin", tag], { env: gitEnv });
+      execFileSync("git", ["-C", clone, "checkout", "--detach", "HEAD"], { env: gitEnv });
+      execFileSync("git", ["-C", clone, "branch", "-D", "main"], { env: gitEnv });
+      assert.throws(() => execFileSync("git", ["-C", clone, "rev-parse", "main"], { env: gitEnv }), /unknown revision|not a valid object name/);
+      const execGit = (args) => execFileSync("git", args, { cwd: clone, encoding: "utf8", env: gitEnv });
+      const verified = verifyReleaseTagIsAncestorOfMain({
+        tag,
+        execGit,
+        mainRef: "origin/main",
+        fetchOriginMain: true,
+      });
+      assert.equal(verified, firstSha);
+    } finally {
+      rmTracked(root);
     }
   });
 });

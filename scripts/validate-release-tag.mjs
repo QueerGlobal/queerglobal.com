@@ -71,12 +71,24 @@ export function verifyReleaseTagPointsAtEmbeddedSha(input) {
  *   execGit?: (args: string[]) => string,
  * }} input
  */
+/**
+ * @param {{
+ *   tag: string,
+ *   mainRef?: string,
+ *   fetchOriginMain?: boolean,
+ *   execGit?: (args: string[]) => string,
+ * }} input
+ * @returns {string} verified tag commit sha
+ */
 export function verifyReleaseTagIsAncestorOfMain(input) {
-  const mainRef = input.mainRef ?? "refs/heads/main";
+  const mainRef = input.mainRef ?? "origin/main";
   const tagCommit = verifyReleaseTagPointsAtEmbeddedSha(input);
   const execGit =
     input.execGit ??
     ((args) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+  if (input.fetchOriginMain !== false) {
+    execGit(["fetch", "--no-tags", "origin", "main"]);
+  }
   try {
     execGit(["merge-base", "--is-ancestor", tagCommit, mainRef]);
   } catch {
@@ -84,6 +96,7 @@ export function verifyReleaseTagIsAncestorOfMain(input) {
       `Release tag commit ${tagCommit} is not an ancestor of ${mainRef}; refusing redeploy.`,
     );
   }
+  return tagCommit;
 }
 
 /**
@@ -96,7 +109,8 @@ export function runValidateReleaseTagCli(argv = process.argv.slice(2)) {
     const tag = verifyOnMain ? (argv[1] ?? "") : (argv[0] ?? "");
     assertValidReleaseTag(tag);
     if (verifyOnMain) {
-      verifyReleaseTagIsAncestorOfMain({ tag });
+      const verifiedSha = verifyReleaseTagIsAncestorOfMain({ tag, fetchOriginMain: true });
+      process.stdout.write(`${verifiedSha}\n`);
     }
     return 0;
   } catch (err) {
