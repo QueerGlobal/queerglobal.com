@@ -80,7 +80,7 @@ skip_region_validation = true
 EOF
 
 export CLOUDFLARE_API_TOKEN="..."
-export TF_VAR_cloudflare_account_id="..."
+eval "$(node scripts/bootstrap-export-committed-env.mjs)"
 
 tofu -chdir=infra init -backend-config=backend.hcl
 tofu -chdir=infra plan

@@ -15,6 +15,67 @@ import {
   ZONE_ID,
 } from "./test-helpers/fetch-stub.mjs";
 
+describe("preflightBootstrapCloudflare account id lookup", () => {
+  it("derives the account id when TF_VAR_cloudflare_account_id is unset", async () => {
+    const saved = process.env.TF_VAR_cloudflare_account_id;
+    delete process.env.TF_VAR_cloudflare_account_id;
+    try {
+      const result = await preflightBootstrapCloudflare({
+        token: "full-token",
+        fetchImpl: bootstrapStandInFetch(),
+      });
+      assert.equal(result.ok, true);
+    } finally {
+      if (saved === undefined) {
+        delete process.env.TF_VAR_cloudflare_account_id;
+      } else {
+        process.env.TF_VAR_cloudflare_account_id = saved;
+      }
+    }
+  });
+
+  it("fails closed when the zone lookup fails and no account id was passed", async () => {
+    const result = await preflightBootstrapCloudflare({
+      token: "full-token",
+      fetchImpl: fetchWith(() => ({
+        ok: false,
+        status: 403,
+        json: async () => ({
+          success: false,
+          errors: [{ message: "zone lookup denied" }],
+        }),
+      })),
+    });
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      throw new Error("expected failure");
+    }
+    assert.match(result.error, /zone lookup failed/);
+  });
+
+  it("rejects a hand-set TF_VAR_cloudflare_account_id that does not match the token lookup", async () => {
+    const saved = process.env.TF_VAR_cloudflare_account_id;
+    process.env.TF_VAR_cloudflare_account_id = "ffffffffffffffffffffffffffffffff";
+    try {
+      const result = await preflightBootstrapCloudflare({
+        token: "full-token",
+        fetchImpl: bootstrapStandInFetch(),
+      });
+      assert.equal(result.ok, false);
+      if (result.ok) {
+        throw new Error("expected failure");
+      }
+      assert.match(result.error, /does not match the account/);
+    } finally {
+      if (saved === undefined) {
+        delete process.env.TF_VAR_cloudflare_account_id;
+      } else {
+        process.env.TF_VAR_cloudflare_account_id = saved;
+      }
+    }
+  });
+});
+
 describe("preflightBootstrapCloudflare capability probes", () => {
   it("passes a full account token (real response shapes)", async () => {
     const result = await preflightBootstrapCloudflare({

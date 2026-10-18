@@ -27,7 +27,14 @@ Create a **user or account API token** that can pass the bootstrap preflight cap
 - **Workers R2 Storage Write** on this account (creates the state bucket). Preflight can only prove read access (`GET /accounts/{id}/r2/buckets`); if write is missing, the first apply fails at bucket creation.
 - **Zone Read** for **`grandkru.com`** on this account (`GET /zones?name=grandkru.com&account.id={id}` must return exactly that zone)
 
-Run `node scripts/preflight-bootstrap-cloudflare.mjs` after exporting `CLOUDFLARE_API_TOKEN` and `TF_VAR_cloudflare_account_id`.
+```bash
+read -rs CLOUDFLARE_API_TOKEN
+echo
+export CLOUDFLARE_API_TOKEN
+node scripts/preflight-bootstrap-cloudflare.mjs
+```
+
+Preflight derives `TF_VAR_cloudflare_account_id` from the token (read-only zone lookup); do not export or type an account id by hand.
 
 ### GitHub (fine-grained PAT on this repository)
 
@@ -132,45 +139,17 @@ No manual copying of Cloudflare or Doppler deploy secrets is required; the provi
 
 ## Passphrase rotation
 
-Store the new passphrase in the bootstrap Doppler config as **`BOOTSTRAP_STATE_PASSPHRASE_NEXT`** (stdin, not argv), then load both passphrases:
+Store the new passphrase in the bootstrap Doppler config as **`BOOTSTRAP_STATE_PASSPHRASE_NEXT`** (stdin, not argv), then run rotation in a child process so passphrases never sit in your interactive shell:
 
 ```bash
 openssl rand -base64 24 | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE_NEXT \
   -p "$TF_VAR_doppler_project" \
   -c "$TF_VAR_doppler_bootstrap_config"
 
-export TF_VAR_bootstrap_state_passphrase="$(
-  doppler secrets get BOOTSTRAP_STATE_PASSPHRASE --plain \
-    -p "$TF_VAR_doppler_project" \
-    -c "$TF_VAR_doppler_bootstrap_config"
-)"
-export TF_VAR_bootstrap_state_passphrase_next="$(
-  doppler secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT --plain \
-    -p "$TF_VAR_doppler_project" \
-    -c "$TF_VAR_doppler_bootstrap_config"
-)"
-
-bash scripts/bootstrap-passphrase-rotate.sh
+bash scripts/bootstrap-passphrase-rotate-run.sh
 ```
 
-Promote the new passphrase in Doppler (check `BOOTSTRAP_STATE_PASSPHRASE_NEXT` before any write, then back up so `BOOTSTRAP_STATE_ENCRYPTED` matches the passphrase that becomes current), then remove `BOOTSTRAP_STATE_PASSPHRASE_NEXT`:
-
-```bash
-(
-  set -euo pipefail
-  config="${TF_VAR_doppler_bootstrap_config:-bootstrap}"
-  next_from_doppler="$(doppler secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT --plain -p "$TF_VAR_doppler_project" -c "$config")"
-  if [ "$next_from_doppler" != "$TF_VAR_bootstrap_state_passphrase_next" ]; then
-    echo "BOOTSTRAP_STATE_PASSPHRASE_NEXT does not match the rotation passphrase; not promoting." >&2
-    exit 1
-  fi
-  bash scripts/bootstrap-state-backup.sh
-  printf '%s' "$next_from_doppler" | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE -p "$TF_VAR_doppler_project" -c "$config"
-  doppler secrets delete BOOTSTRAP_STATE_PASSPHRASE_NEXT -p "$TF_VAR_doppler_project" -c "$config" --yes
-)
-```
-
-Or set `BOOTSTRAP_ROTATE_PROMOTE_DOPPLER=1` when running `bash scripts/bootstrap-passphrase-rotate.sh`. After rotation succeeds, type **`promote`** when prompted; the script reads `BOOTSTRAP_STATE_PASSPHRASE_NEXT`, verifies it matches the new passphrase, backs up state, sets `BOOTSTRAP_STATE_PASSPHRASE`, then deletes `_NEXT`.
+To promote the new passphrase in Doppler in the same run (check `BOOTSTRAP_STATE_PASSPHRASE_NEXT` before any write, back up so `BOOTSTRAP_STATE_ENCRYPTED` matches the passphrase that becomes current, then remove `_NEXT`), set `BOOTSTRAP_ROTATE_PROMOTE_DOPPLER=1` when running `bash scripts/bootstrap-passphrase-rotate-run.sh`. After rotation succeeds, type **`promote`** when prompted; the script reads `BOOTSTRAP_STATE_PASSPHRASE_NEXT`, verifies it matches the new passphrase, backs up state, sets `BOOTSTRAP_STATE_PASSPHRASE`, then deletes `_NEXT`.
 
 ## Rotate GitHub DOPPLER_TOKEN
 

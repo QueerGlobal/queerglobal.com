@@ -215,7 +215,7 @@ export async function cloudflareProbeZoneOnAccount(input) {
  */
 export async function preflightBootstrapCloudflare(options) {
   const token = options.token ?? process.env.CLOUDFLARE_API_TOKEN;
-  let accountId = options.accountId ?? process.env.TF_VAR_cloudflare_account_id ?? "";
+  let accountId = options.accountId ?? "";
   const zoneName = options.zoneName ?? "grandkru.com";
   const fetchImpl = options.fetchImpl ?? fetch;
 
@@ -228,6 +228,13 @@ export async function preflightBootstrapCloudflare(options) {
       return derived;
     }
     accountId = derived.accountId;
+    const fromEnv = process.env.TF_VAR_cloudflare_account_id ?? "";
+    if (fromEnv && fromEnv !== accountId) {
+      return {
+        ok: false,
+        error: `TF_VAR_cloudflare_account_id does not match the account for ${zoneName} from the token; unset it and let preflight derive the account id.`,
+      };
+    }
     process.env.TF_VAR_cloudflare_account_id = accountId;
   }
 
