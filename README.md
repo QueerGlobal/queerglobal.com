@@ -1,0 +1,143 @@
+# queerglobal.com
+
+Coming-soon / mission page for QueerGlobal.
+
+**Deploy target:** `queerglobal.grandkru.com` (Grand Kru Cloudflare). Not
+deployed yet, and not linked from anywhere public until it is reviewed and
+working.
+
+QueerGlobal's own DNS is not in Grand Kru's hands, so work is finished on
+this Grand Kru subdomain first. It is not `activism.grandkru.com/queerglobal`.
+Do not change `queerglobal.com` DNS.
+
+The page is served from `public/`. The previous Adobe XD export lives in
+`archive/xd-export/` and is not served. The old `main` root layout from commit
+`5c6343c` (prepared for AWS publishing) is retired into `archive/xd-export/`; root
+`index.html` and `revisions/index.html` swap places there. `queerglobal.com` does
+not currently resolve, so no live site is affected by this repository.
+
+The intended product app is [qg-frontend-v2](https://github.com/QueerGlobal/qg-frontend-v2).
+Contributor docs are in [qg-docs](https://github.com/QueerGlobal/qg-docs).
+
+## Local preview
+
+```bash
+npm install
+npm run dev
+```
+
+Then open the printed `localhost` URL. You should see the coming-soon page
+with the mission, `info@queerglobal.com`, Project docs, and the app repo.
+
+Optional: set `CLOUDFLARE_ACCOUNT_ID` in the environment when using Wrangler
+against a remote account (local dev usually does not need it).
+
+## Deploy (Mark, Grand Kru Cloudflare)
+
+Production deploys are automated. After merge to `main`, the
+[Deploy production](.github/workflows/deploy-production.yml) workflow runs in
+the GitHub **production** environment (manual approval required). It uses
+OpenTofu in `infra/` to publish the Worker and attach
+`queerglobal.grandkru.com`, then smoke-tests the live site.
+
+Secrets are not stored in this repository. **Only `DOPPLER_TOKEN` is synced to
+GitHub** (via the bootstrap stack). All other production values live in Doppler
+and are fetched at deploy time:
+
+| Doppler secret / variable | Purpose |
+|---------------------------|---------|
+| `CLOUDFLARE_API_TOKEN` | OpenTofu provider and rollback API calls |
+| `CLOUDFLARE_ACCOUNT_ID` | Account for Workers and custom domain |
+| `TF_STATE_BUCKET` | Remote OpenTofu state bucket (from bootstrap) |
+| `TF_STATE_ENDPOINT` | S3 API endpoint (required for Cloudflare R2) |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Scoped R2 credentials for state (from bootstrap) |
+
+Bootstrap also writes `TF_STATE_KEY` and `TF_STATE_REGION` to Doppler; CI uses
+the same defaults (`queerglobal-grandkru/terraform.tfstate`, `auto`).
+
+Run [infra/bootstrap](infra/bootstrap/README.md) once before the first merge. That
+creates:
+
+| Where | What bootstrap creates |
+|-------|-------------------------|
+| **GitHub** | Protected **production** environment (reviewers, main-only deploys, no admin bypass) and environment secret **`DOPPLER_TOKEN`** |
+| **Cloudflare** | R2 state bucket, scoped R2 token, and deploy API token (Workers plus zone DNS/routes) |
+| **Doppler (`prd`)** | `CLOUDFLARE_*`, `TF_STATE_*`, and `AWS_*` for deploys (written by bootstrap; not copied by hand) |
+
+The Cloudflare account ID and workers.dev subdomain name are intentionally
+omitted from committed files. They may still appear in older git history.
+
+### Production smoke test
+
+After each deploy, CI requests `https://queerglobal.grandkru.com` and
+requires:
+
+- HTTP status **200**
+- HTML containing the document title **`Queer Global: coming soon`**
+
+The same check is implemented in `scripts/check-production-site.mjs` (`npm run
+check:coming-soon`). It retries with backoff for about five minutes (configurable
+via `CHECK_PRODUCTION_*` env vars) so TLS on a new custom domain can finish
+provisioning. The workflow runs the check again after a 15-minute wait and
+confirms `activism.grandkru.com` still does not show the coming-soon page.
+
+If the smoke test or recheck fails after a successful OpenTofu apply, the
+workflow rolls back the Worker to the version captured immediately before
+deploy, or on the first deploy, when no prior Worker existed, removes the new
+Worker and custom domain (see below).
+
+### Release tags and rollback
+
+Each successful deploy pushes a Git tag `release/<run>-<sha>` from a separate
+`tag_release` job, the only job with write access. Checkout never stores the
+GitHub token; `scripts/push-release-tag.sh` hands it to git through a credential
+helper that reads it from the environment, so it never appears in a URL or on a
+command line. To redeploy a
+previous release, run **Deploy production** via **Run workflow**, set
+`rollback_release_tag` to the earlier tag (for example
+`release/42-0123456789abcdef0123456789abcdef01234567`), and approve the production environment.
+That job skips the push test suite because the tag was already validated on its original deploy; OpenTofu plan/apply still run under production approval.
+
+Manual Worker version rollback (without checking out a tag) uses the
+`rollback_version_id` workflow input with a Cloudflare Workers version UUID.
+The workflow runs tests before that rollback job and still requires production approval.
+
+**First deploy, smoke or recheck failed:** there is no previous Worker version
+to roll back to. The deploy workflow runs
+`scripts/run-infra-first-deploy-cleanup.sh .previous-worker-version`
+automatically. It refuses to run unless that file holds the first-deploy marker,
+validates, saves a targeted destroy plan, checks that the plan only deletes this
+Worker and its custom domain, and only then applies that plan. Failures are
+reported to Sentry when `SENTRY_DSN` is set. Do not run `tofu destroy` by hand; there is
+no local apply path (see [infra/README.md](infra/README.md)).
+
+### Notes for running this
+
+1. **OpenTofu** creates the Worker (static assets from `public/`) and the
+   `queerglobal.grandkru.com` custom domain on the `grandkru.com` zone. Do
+   not add a conflicting CNAME for `queerglobal` before apply: an existing
+   CNAME blocks Custom Domains.
+
+2. Do **not** point `queerglobal.com` or `www.queerglobal.com` at this
+   Worker. Do **not** add `/queerglobal` on `activism-grandkru-hub`.
+
+### OpenTofu remote state (R2)
+
+Production deploys store state in a single remote bucket so GitHub Actions and
+anyone running deploys use the same state file. The bootstrap stack creates the
+bucket and scoped R2 credentials and writes `TF_STATE_*` and `AWS_*` into Doppler.
+The deploy workflow reads them from Doppler for OpenTofu init.
+
+Besides one-time bootstrap, GitHub environment approval on each deploy, and storing
+**`BOOTSTRAP_STATE_PASSPHRASE`** in the separate Doppler **bootstrap** config (see
+[infra/bootstrap/README.md](infra/bootstrap/README.md)), no other manual infrastructure
+steps are required. See [infra/README.md](infra/README.md).
+
+There is no local apply path; production changes go through the gated workflow. See [infra/README.md](infra/README.md).
+
+## Later
+
+Once the page is deployed, reviewed, and working, it can be linked from
+public surfaces (org profile, repo READMEs). When apex DNS access arrives,
+add `queerglobal.com` and `www.queerglobal.com` as additional Custom Domains
+on the same Worker.

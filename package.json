@@ -1,0 +1,21 @@
+{
+  "name": "queerglobal-grandkru",
+  "private": true,
+  "version": "1.0.0",
+  "description": "QueerGlobal coming-soon page for queerglobal.grandkru.com",
+  "scripts": {
+    "dev": "wrangler dev",
+    "check:no-em-dash": "node scripts/no-em-dash.mjs",
+    "check:coming-soon": "node scripts/check-production-site.mjs",
+    "test": "node scripts/run-node-tests.mjs",
+    "test:e2e": "bash scripts/bootstrap-first-apply-e2e.sh && bash scripts/bootstrap-passphrase-rotation-e2e.sh && bash scripts/first-deploy-cleanup-e2e.sh",
+    "terraform:fmt": "tofu fmt -recursive infra/",
+    "terraform:validate": "tofu -chdir=infra init -backend=false && tofu -chdir=infra validate"
+  },
+  "devDependencies": {
+    "wrangler": "^4.34.0"
+  },
+  "dependencies": {
+    "@sentry/node": "^9.47.2"
+  }
+}

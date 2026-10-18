@@ -1,0 +1,14 @@
+bucket = "YOUR_TF_STATE_BUCKET"
+key    = "queerglobal-grandkru/terraform.tfstate"
+region = "auto"
+
+# Cloudflare R2 (S3-compatible). Set TF_STATE_ENDPOINT in Doppler, for example:
+#   https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com
+endpoint                   = "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com"
+skip_credentials_validation = true
+skip_metadata_api_check     = true
+skip_region_validation      = true
+
+# Credentials come from the environment (Doppler in CI), not this file:
+#   AWS_ACCESS_KEY_ID     (R2 access key ID)
+#   AWS_SECRET_ACCESS_KEY (R2 secret access key)

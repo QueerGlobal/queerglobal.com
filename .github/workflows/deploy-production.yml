@@ -1,0 +1,331 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      rollback_version_id:
+        description: Worker version ID to roll back to (manual rollback job only)
+        required: false
+        type: string
+      rollback_release_tag:
+        description: Git release tag to redeploy (must start with release/)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-queerglobal-grandkru-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: 1.13.1
+          checksums: 8ccbc6f8ee21d2827715f3c6e08a9b3e0209b1e62057c05067ef117e047c1a80
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check OpenTofu formatting
+        run: tofu fmt -check -recursive infra/
+
+      - name: Validate OpenTofu configuration
+        env:
+          TF_VAR_bootstrap_state_passphrase: mock-bootstrap-passphrase-for-ci
+        run: |
+          tofu -chdir=infra init -backend=false
+          tofu -chdir=infra validate
+          tofu -chdir=infra/bootstrap init -backend=false
+          tofu -chdir=infra/bootstrap validate
+
+      - name: Run OpenTofu mock tests
+        env:
+          TF_VAR_bootstrap_state_passphrase: mock-bootstrap-passphrase-for-ci
+        run: |
+          tofu -chdir=infra test
+          tofu -chdir=infra/bootstrap test
+
+      - name: Run tests
+        run: npm test
+
+  deploy:
+    if: github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    # actions: read for environment + deployment-branch-policies REST calls
+    # (see https://docs.github.com/en/rest/deployments/environments and deployment-branch-policies)
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify production environment is protected
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/verify-production-environment.mjs
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: 1.13.1
+          checksums: 8ccbc6f8ee21d2827715f3c6e08a9b3e0209b1e62057c05067ef117e047c1a80
+
+      - name: Install Doppler CLI
+        uses: DopplerHQ/cli-action@014df23b1329b615816a38eb5f473bb9000700b1 # v3
+
+      - name: Capture current Worker version
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- \
+            node scripts/capture-worker-version.mjs .previous-worker-version
+
+      - name: OpenTofu plan for production
+        id: infra_plan
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          INFRA_CI_PLAN_DIR: ${{ runner.temp }}/infra-plan-${{ github.run_id }}
+        run: |
+          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
+            bash scripts/run-infra-tofu-plan.sh
+
+      - name: OpenTofu apply production plan
+        id: apply
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          INFRA_CI_PLAN_DIR: ${{ runner.temp }}/infra-plan-${{ github.run_id }}
+        run: |
+          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
+            bash scripts/run-infra-tofu-apply.sh
+
+      - name: Production smoke test
+        id: smoke
+        run: node scripts/check-production-site.mjs https://queerglobal.grandkru.com
+
+      - name: Wait and recheck production (15 minutes)
+        id: recheck
+        if: success()
+        run: |
+          echo "Waiting 15 minutes before post-deploy recheck..."
+          sleep 900
+          node scripts/check-production-site.mjs https://queerglobal.grandkru.com
+          node scripts/check-activism-unchanged.mjs https://activism.grandkru.com
+
+      - name: Roll back Worker on smoke or recheck failure
+        if: failure() && steps.apply.outcome == 'success' && (steps.smoke.outcome == 'failure' || steps.recheck.outcome == 'failure')
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+        run: |
+          PREVIOUS="$(tr -d '\n' < .previous-worker-version)"
+          if [ -z "$PREVIOUS" ]; then
+            echo "Previous Worker version file is empty; refusing to guess between rollback and cleanup." >&2
+            exit 1
+          fi
+          if [ "$PREVIOUS" = "__NO_PREVIOUS_WORKER__" ]; then
+            echo "No previous Worker version (first deploy); running automated stack cleanup."
+            doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
+              bash scripts/run-infra-first-deploy-cleanup.sh .previous-worker-version
+          else
+            doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- \
+              env WORKER_NAME=queerglobal-grandkru node scripts/worker-rollback.mjs "$PREVIOUS"
+          fi
+
+  tag_release:
+    if: github.event_name == 'push'
+    needs: deploy
+    runs-on: ubuntu-latest
+    # The only job that can write: it pushes one release tag after deploy and recheck succeed.
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Tag release
+        env:
+          RELEASE_TAG: release/${{ github.run_number }}-${{ github.sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash scripts/push-release-tag.sh
+
+  test_on_worker_rollback:
+    if: github.event_name == 'workflow_dispatch' && inputs.rollback_version_id != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  rollback:
+    if: github.event_name == 'workflow_dispatch' && inputs.rollback_version_id != ''
+    needs: test_on_worker_rollback
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify production environment is protected
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/verify-production-environment.mjs
+
+      - name: Install Doppler CLI
+        uses: DopplerHQ/cli-action@014df23b1329b615816a38eb5f473bb9000700b1 # v3
+
+      - name: Roll back Worker
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          ROLLBACK_VERSION_ID: ${{ inputs.rollback_version_id }}
+        run: |
+          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- \
+            env WORKER_NAME=queerglobal-grandkru node scripts/worker-rollback.mjs "$ROLLBACK_VERSION_ID"
+
+  # Skips the push test job: release tags are created only after deploy smoke and recheck passed.
+  redeploy_release_tag:
+    if: github.event_name == 'workflow_dispatch' && inputs.rollback_release_tag != ''
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate release tag prefix
+        env:
+          ROLLBACK_RELEASE_TAG: ${{ inputs.rollback_release_tag }}
+        run: node scripts/validate-release-tag.mjs "$ROLLBACK_RELEASE_TAG"
+
+      - name: Verify release tag commit is on main
+        env:
+          ROLLBACK_RELEASE_TAG: ${{ inputs.rollback_release_tag }}
+        run: |
+          VERIFIED_SHA="$(node scripts/validate-release-tag.mjs --verify-on-main "$ROLLBACK_RELEASE_TAG")"
+          if ! [[ "$VERIFIED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Release tag check did not return a full commit SHA; refusing redeploy." >&2
+            exit 1
+          fi
+          echo "VERIFIED_RELEASE_SHA=$VERIFIED_SHA" >> "$GITHUB_ENV"
+
+      - name: Checkout verified release commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          ref: ${{ env.VERIFIED_RELEASE_SHA }}
+
+      - name: Verify production environment is protected
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/verify-production-environment.mjs
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+        with:
+          tofu_version: 1.13.1
+          checksums: 8ccbc6f8ee21d2827715f3c6e08a9b3e0209b1e62057c05067ef117e047c1a80
+
+      - name: Install Doppler CLI
+        uses: DopplerHQ/cli-action@014df23b1329b615816a38eb5f473bb9000700b1 # v3
+
+      - name: OpenTofu plan from release tag
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          INFRA_CI_PLAN_DIR: ${{ runner.temp }}/infra-plan-${{ github.run_id }}
+        run: |
+          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
+            bash scripts/run-infra-tofu-plan.sh
+
+      - name: OpenTofu apply release tag plan
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          ROLLBACK_RELEASE_TAG: ${{ inputs.rollback_release_tag }}
+          INFRA_CI_PLAN_DIR: ${{ runner.temp }}/infra-plan-${{ github.run_id }}
+        run: |
+          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
+            bash -ec '
+            scripts/run-infra-tofu-apply.sh
+            echo "Redeployed release tag ${ROLLBACK_RELEASE_TAG}."
+          '
+
+      - name: Production smoke test after redeploy
+        run: node scripts/check-production-site.mjs https://queerglobal.grandkru.com
+
+      - name: Activism unchanged check after redeploy
+        run: node scripts/check-activism-unchanged.mjs https://activism.grandkru.com

@@ -1,0 +1,9 @@
+name = "queerglobal-grandkru"
+compatibility_date = "2026-10-09"
+workers_dev = true
+
+# Local dev only. Production hostname and deploy are managed in infra/ (OpenTofu).
+# Set CLOUDFLARE_ACCOUNT_ID when publishing from a workstation.
+
+[assets]
+directory = "./public"

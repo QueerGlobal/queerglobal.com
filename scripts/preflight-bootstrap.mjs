@@ -1,0 +1,218 @@
+/**
+ * Preflight checks before bootstrap OpenTofu apply (read-only; no Doppler or OpenTofu writes).
+ *
+ * @module preflight-bootstrap
+ */
+
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { runBootstrapCli } from "./bootstrap-error-report.mjs";
+import { bootstrapProjectTfVarEnv } from "./lib/bootstrap-project.mjs";
+import { loadProductionReviewerUsernames } from "./lib/bootstrap-reviewers.mjs";
+import { githubBearerRequest } from "./lib/cloudflare-github-api.mjs";
+import { preflightBootstrapCloudflare } from "./preflight-bootstrap-cloudflare.mjs";
+
+/**
+ * @param {string} token
+ * @returns {boolean}
+ */
+export function dopplerManagementTokenLooksValid(token) {
+  return /^dp\.(pt|sa)\./.test(token);
+}
+
+/**
+ * @param {{
+ *   githubToken?: string,
+ *   githubOwner?: string,
+ *   githubRepository?: string,
+ *   dopplerToken?: string,
+ *   dopplerProject?: string,
+ *   fetchImpl?: typeof fetch,
+ * }} [options]
+ * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
+ */
+export async function preflightBootstrapGithubAdmin(options = {}) {
+  const githubToken = options.githubToken ?? process.env.TF_VAR_github_token ?? "";
+  const owner = options.githubOwner ?? process.env.TF_VAR_github_owner ?? "QueerGlobal";
+  const repo = options.githubRepository ?? process.env.TF_VAR_github_repository ?? "queerglobal.com";
+  const fetchImpl = options.fetchImpl ?? fetch;
+
+  if (!githubToken) {
+    return { ok: false, error: "TF_VAR_github_token is required." };
+  }
+
+  const response = await githubBearerRequest(
+    `https://api.github.com/repos/${owner}/${repo}`,
+    githubToken,
+    fetchImpl,
+  );
+  const body = await response.json();
+  if (!response.ok) {
+    const message = body.message ?? response.statusText;
+    return { ok: false, error: `GitHub repository check failed: ${message}` };
+  }
+  if (body.permissions?.admin !== true) {
+    return {
+      ok: false,
+      error: `GitHub token lacks Administration (admin) on ${owner}/${repo}.`,
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * @param {{
+ *   dopplerToken?: string,
+ *   dopplerProject?: string,
+ *   fetchImpl?: typeof fetch,
+ * }} [options]
+ * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
+ */
+export async function preflightBootstrapDopplerProject(options = {}) {
+  const dopplerToken = options.dopplerToken ?? process.env.TF_VAR_doppler_management_token ?? "";
+  const dopplerProject = options.dopplerProject ?? process.env.TF_VAR_doppler_project ?? "";
+  const fetchImpl = options.fetchImpl ?? fetch;
+
+  if (!dopplerToken) {
+    return { ok: false, error: "TF_VAR_doppler_management_token is required." };
+  }
+  if (!dopplerManagementTokenLooksValid(dopplerToken)) {
+    return {
+      ok: false,
+      error:
+        "TF_VAR_doppler_management_token must be a personal token (dp.pt.) or service account token (dp.sa.), not a config service token (dp.st.).",
+    };
+  }
+  if (!dopplerProject) {
+    return { ok: false, error: "TF_VAR_doppler_project is required." };
+  }
+
+  const response = await fetchImpl(`https://api.doppler.com/v3/projects/${dopplerProject}`, {
+    headers: {
+      Authorization: `Bearer ${dopplerToken}`,
+      Accept: "application/json",
+    },
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message = body.messages?.[0]?.message ?? body.message ?? response.statusText;
+    return { ok: false, error: `Doppler project read failed: ${message}` };
+  }
+  return { ok: true };
+}
+
+/**
+ * The deploy config (read by the CI service token) must not sit in the bootstrap
+ * environment: a branch config inherits its environment root, so a deploy config such
+ * as `bootstrap_prd` would hand CI the bootstrap passphrase and state backup.
+ *
+ * @param {{
+ *   dopplerToken?: string,
+ *   dopplerProject?: string,
+ *   deployConfig?: string,
+ *   bootstrapConfig?: string,
+ *   fetchImpl?: typeof fetch,
+ * }} [options]
+ * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
+ */
+export async function preflightBootstrapDopplerIsolation(options = {}) {
+  const dopplerToken = options.dopplerToken ?? process.env.TF_VAR_doppler_management_token ?? "";
+  const project = options.dopplerProject ?? process.env.TF_VAR_doppler_project ?? "";
+  const deployConfig = options.deployConfig ?? process.env.TF_VAR_doppler_config ?? "prd";
+  const bootstrapConfig = options.bootstrapConfig ?? process.env.TF_VAR_doppler_bootstrap_config ?? "bootstrap";
+  const fetchImpl = options.fetchImpl ?? fetch;
+
+  const getConfig = async (config) => {
+    const query = new URLSearchParams({ project, config });
+    const response = await fetchImpl(`https://api.doppler.com/v3/configs/config?${query}`, {
+      headers: { Authorization: `Bearer ${dopplerToken}`, Accept: "application/json" },
+    });
+    const body = await response.json().catch(() => ({}));
+    return { status: response.status, ok: response.ok, config: body.config };
+  };
+
+  const deploy = await getConfig(deployConfig);
+  if (!deploy.ok || typeof deploy.config?.environment !== "string") {
+    return { ok: false, error: `Doppler deploy config ${project}/${deployConfig} could not be read.` };
+  }
+  if (deploy.config.environment === bootstrapConfig) {
+    return {
+      ok: false,
+      error: `Doppler deploy config ${deployConfig} is in environment ${bootstrapConfig}; CI would inherit bootstrap secrets.`,
+    };
+  }
+  const bootstrap = await getConfig(bootstrapConfig);
+  if (bootstrap.ok && bootstrap.config?.environment === deploy.config.environment) {
+    return {
+      ok: false,
+      error: `Doppler configs ${deployConfig} and ${bootstrapConfig} share environment ${deploy.config.environment}; use separate environments.`,
+    };
+  }
+  if (!bootstrap.ok && bootstrap.status !== 404) {
+    return { ok: false, error: `Doppler bootstrap config ${project}/${bootstrapConfig} check failed (HTTP ${bootstrap.status}).` };
+  }
+  return { ok: true };
+}
+
+/**
+ * @param {{
+ *   fetchImpl?: typeof fetch,
+ * }} [options]
+ * @returns {Promise<number>}
+ */
+export async function runPreflightBootstrapCli(options = {}) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const repoRoot = options.repoRoot ?? process.cwd();
+  Object.assign(process.env, bootstrapProjectTfVarEnv(repoRoot));
+  let reviewers;
+  try {
+    reviewers = options.reviewers ?? loadProductionReviewerUsernames(repoRoot);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    return 1;
+  }
+  if (reviewers.length === 0) {
+    console.error("production-reviewers.auto.tfvars.json must list at least one reviewer.");
+    return 1;
+  }
+
+  const cloudflare = await preflightBootstrapCloudflare({ fetchImpl });
+  if (!cloudflare.ok) {
+    console.error(cloudflare.error);
+    return 1;
+  }
+
+  const github = await preflightBootstrapGithubAdmin({ fetchImpl });
+  if (!github.ok) {
+    console.error(github.error);
+    return 1;
+  }
+
+  const doppler = await preflightBootstrapDopplerProject({ fetchImpl });
+  if (!doppler.ok) {
+    console.error(doppler.error);
+    return 1;
+  }
+
+  const isolation = await preflightBootstrapDopplerIsolation({ fetchImpl });
+  if (!isolation.ok) {
+    console.error(isolation.error);
+    return 1;
+  }
+
+  console.log("OK bootstrap preflight passed.");
+  return 0;
+}
+
+const thisFile = fileURLToPath(import.meta.url);
+if (
+  process.argv[1] !== undefined &&
+  path.resolve(process.argv[1]) === path.resolve(thisFile)
+) {
+  runBootstrapCli(async () => {
+    process.exitCode = await runPreflightBootstrapCli({});
+  }).catch(() => {
+    process.exitCode = 1;
+  });
+}
