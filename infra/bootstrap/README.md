@@ -67,7 +67,7 @@ export TF_VAR_production_reviewer_usernames='["your-github-username"]'
 node scripts/preflight-bootstrap.mjs
 ```
 
-Preflight order: Cloudflare capability probes (verify active, then R2, then zone), `GET /repos/QueerGlobal/queerglobal.com` (`permissions.admin`), Doppler project read with the management token.
+Preflight order: Cloudflare capability probes (verify active, then R2, then zone), `GET /repos/QueerGlobal/queerglobal.com` (`permissions.admin`), Doppler project read with the management token, then the Doppler isolation check (`GET /v3/configs/config` for both configs: the deploy config must not be in the bootstrap environment or share an environment with the bootstrap config).
 
 Bootstrap Node CLIs (`preflight-bootstrap.mjs` and `preflight-bootstrap-cloudflare.mjs`) send uncaught errors to Sentry when **`SENTRY_DSN`** is set in the environment. When unset, reporting is a no-op. Messages are scrubbed of known secret values and token-shaped strings before sending; payloads include only the scrubbed message and a `bootstrap-cli` tag.
 
@@ -128,9 +128,10 @@ export TF_VAR_bootstrap_state_passphrase="$(
 bash scripts/bootstrap-tofu-apply.sh
 ```
 
-Or manually:
+Or step by step (same order as the script; never skip preflight):
 
 ```bash
+node scripts/preflight-bootstrap.mjs
 bash scripts/bootstrap-tofu-init.sh
 tofu -chdir=infra/bootstrap apply
 bash scripts/bootstrap-state-backup.sh
@@ -188,7 +189,7 @@ Re-running a normal apply does **not** rotate the Doppler service token. From th
 make rotate-doppler-github-token
 ```
 
-That runs `tofu -chdir=infra/bootstrap apply -replace=doppler_service_token.github_actions_production` after you type `rotate` to confirm.
+That runs `bash scripts/bootstrap-tofu-apply.sh -replace=doppler_service_token.github_actions_production` after you type `rotate` to confirm, so preflight, restore and the state backup run around the apply.
 
 ## Lost bootstrap state (recovery)
 
@@ -213,8 +214,8 @@ Import each `doppler_secret.*` by Doppler secret name if needed, then run `tofu 
 These steps do **not** assume the leaked Cloudflare or GitHub tokens still work.
 
 1. **Passphrase rotation:** set `BOOTSTRAP_STATE_PASSPHRASE_NEXT` in the bootstrap Doppler config, restore local state from `BOOTSTRAP_STATE_ENCRYPTED` if needed (`bash scripts/bootstrap-tofu-init.sh`), run `bash scripts/bootstrap-passphrase-rotate.sh`, then `bash scripts/bootstrap-state-backup.sh`, and promote `BOOTSTRAP_STATE_PASSPHRASE_NEXT` to `BOOTSTRAP_STATE_PASSPHRASE`.
-2. **Cloudflare:** revoke compromised tokens in the dashboard. Create a **new** bootstrap Cloudflare token (same policies as preflight), export it as `CLOUDFLARE_API_TOKEN`, run preflight, then `tofu -chdir=infra/bootstrap apply` to mint replacements and refresh Doppler deploy secrets.
-3. **GitHub Doppler deploy token:** run `make rotate-doppler-github-token` (or the `-replace` command above) with a valid bootstrap GitHub PAT and management token.
+2. **Cloudflare:** revoke compromised tokens in the dashboard. Create a **new** bootstrap Cloudflare token (same policies as preflight), export it as `CLOUDFLARE_API_TOKEN`, then run `bash scripts/bootstrap-tofu-apply.sh` (preflight, restore, apply, backup) to mint replacements and refresh Doppler deploy secrets.
+3. **GitHub Doppler deploy token:** run `make rotate-doppler-github-token` with a valid bootstrap GitHub PAT and management token.
 
 ## Scripted checks
 

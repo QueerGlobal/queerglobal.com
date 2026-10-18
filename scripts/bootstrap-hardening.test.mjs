@@ -128,6 +128,33 @@ describe("bootstrap-tofu-apply.sh", () => {
     assert.doesNotMatch(src, /auto-approve/);
     assert.match(src, /^tofu -chdir=infra\/bootstrap apply "\$@"$/m);
   });
+
+  it("passes -replace through to tofu apply after preflight", () => {
+    const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tofu-apply-")), "argv.log");
+    const tofu = stubBin("tofu", `echo "$*" >> "${log}"; exit 0`);
+    const node = stubBin(
+      "node",
+      `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`,
+    );
+    const nodeBin = path.dirname(process.execPath);
+    const env = {
+      PATH: `${tofu}:${node}:${nodeBin}:/usr/local/bin:/usr/bin:/bin`,
+      HOME: os.tmpdir(),
+      BOOTSTRAP_FIRST_RUN: "1",
+      TF_VAR_doppler_project: "queerglobal",
+    };
+    const r = spawnSync(
+      "bash",
+      [
+        "scripts/bootstrap-tofu-apply.sh",
+        "-replace=doppler_service_token.github_actions_production",
+      ],
+      { env, encoding: "utf8" },
+    );
+    assert.equal(r.status, 0, r.stderr);
+    const argv = fs.readFileSync(log, "utf8");
+    assert.match(argv, /-chdir=infra\/bootstrap apply -replace=doppler_service_token\.github_actions_production/);
+  });
 });
 
 const OLD_PASS = "old-passphrase-0000000000";
@@ -303,5 +330,21 @@ describe("bootstrap preflight CLI runs the Doppler isolation check", () => {
       console.error = orig;
       process.env = saved;
     }
+  });
+});
+
+describe("bootstrap writes always go through bootstrap-tofu-apply.sh", () => {
+  it("make rotate-doppler-github-token uses the apply script", () => {
+    const make = fs.readFileSync("Makefile", "utf8");
+    assert.match(make, /^\tbash scripts\/bootstrap-tofu-apply\.sh -replace=doppler_service_token\.github_actions_production$/m);
+    assert.doesNotMatch(make, /^\t[^@]*tofu -chdir=infra\/bootstrap apply/m);
+  });
+
+  it("no script other than bootstrap-tofu-apply.sh applies the bootstrap stack directly", () => {
+    const offenders = fs
+      .readdirSync("scripts")
+      .filter((f) => f.endsWith(".sh") && f !== "bootstrap-tofu-apply.sh")
+      .filter((f) => /tofu -chdir=infra\/bootstrap apply/.test(fs.readFileSync(path.join("scripts", f), "utf8")));
+    assert.deepEqual(offenders, []);
   });
 });
