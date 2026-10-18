@@ -17,7 +17,7 @@ describe("captureWorkerVersionId", () => {
       statusText: "Not Found",
       json: async () => ({
         success: false,
-        errors: [{ message: "Script not found" }],
+        errors: [{ message: "Script not found", code: 10007 }],
       }),
     });
 

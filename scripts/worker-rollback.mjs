@@ -45,14 +45,18 @@ export function assertValidWorkerVersionId(versionId) {
 /** Marker written when no Worker existed before deploy (first production release). */
 export const NO_PREVIOUS_WORKER_VERSION = "__NO_PREVIOUS_WORKER__";
 
+/** Cloudflare Workers API code when the script name does not exist yet. */
+export const WORKER_SCRIPT_NOT_FOUND_API_CODE = 10007;
+
 /**
  * @param {Response} response
  * @param {{ success?: boolean, errors?: Array<{ message?: string, code?: number }> }} payload
  * @returns {boolean}
  */
 export function isWorkerScriptNotFound(response, payload) {
-  const msg = payload.errors?.[0]?.message ?? response.statusText ?? "";
-  if (response.status === 404) {
+  const err = payload.errors?.[0];
+  const msg = err?.message ?? response.statusText ?? "";
+  if (err?.code === WORKER_SCRIPT_NOT_FOUND_API_CODE) {
     return true;
   }
   return /script not found/i.test(msg);
@@ -160,13 +164,20 @@ export async function rollbackWorkerToVersion(
  * @param {string[]} argv
  * @returns {Promise<number>}
  */
-export async function runRollbackCli(argv = process.argv.slice(2)) {
+/**
+ * @param {string[]} argv
+ * @param {{
+ *   accountId?: string,
+ *   apiToken?: string,
+ *   scriptName?: string,
+ *   fetchImpl?: typeof fetch,
+ * }} [options]
+ * @returns {Promise<number>}
+ */
+export async function runRollbackCli(argv = process.argv.slice(2), options = {}) {
   const versionId = argv[0];
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
-  const scriptName = process.env.WORKER_NAME ?? "queerglobal-grandkru";
 
-  if (!versionId || !accountId || !apiToken) {
+  if (!versionId) {
     console.error(
       "Usage: WORKER_NAME=queerglobal-grandkru CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... node scripts/worker-rollback.mjs <version_id>",
     );
@@ -181,7 +192,20 @@ export async function runRollbackCli(argv = process.argv.slice(2)) {
     return 1;
   }
 
-  await rollbackWorkerToVersion(accountId, scriptName, versionId, apiToken);
+  const accountId = options.accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID;
+  const apiToken = options.apiToken ?? process.env.CLOUDFLARE_API_TOKEN;
+  const scriptName = options.scriptName ?? process.env.WORKER_NAME ?? "queerglobal-grandkru";
+
+  if (!accountId || !apiToken) {
+    console.error(
+      "Usage: WORKER_NAME=queerglobal-grandkru CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... node scripts/worker-rollback.mjs <version_id>",
+    );
+    return 1;
+  }
+
+  await rollbackWorkerToVersion(accountId, scriptName, versionId, apiToken, {
+    fetchImpl: options.fetchImpl,
+  });
   console.log(`Rolled back ${scriptName} to version ${versionId}.`);
   return 0;
 }

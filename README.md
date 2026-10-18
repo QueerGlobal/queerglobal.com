@@ -37,18 +37,21 @@ the GitHub **production** environment (manual approval required). It uses
 OpenTofu in `infra/` to publish the Worker and attach
 `queerglobal.grandkru.com`, then smoke-tests the live site.
 
-Secrets are not stored in this repository. Configure them in Doppler and sync
-to the GitHub `production` environment (see [infra/README.md](infra/README.md)):
+Secrets are not stored in this repository. **Only `DOPPLER_TOKEN` is synced to
+GitHub** (via the bootstrap stack). All other production values live in Doppler
+and are fetched at deploy time:
 
-| Secret / variable | Purpose |
-|-------------------|---------|
-| `DOPPLER_TOKEN` | GitHub Actions: fetch config at deploy time |
+| Doppler secret / variable | Purpose |
+|---------------------------|---------|
 | `CLOUDFLARE_API_TOKEN` | OpenTofu provider and rollback API calls |
 | `CLOUDFLARE_ACCOUNT_ID` | Account for Workers and custom domain |
-| `TF_VAR_cloudflare_account_id` | Same value as `CLOUDFLARE_ACCOUNT_ID` for OpenTofu |
 | `TF_STATE_BUCKET`, `TF_STATE_KEY`, `TF_STATE_REGION` | Remote OpenTofu state bucket and object key |
 | `TF_STATE_ENDPOINT` | S3 API endpoint (required for Cloudflare R2) |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | R2 (or S3) credentials for the state backend |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Scoped R2 credentials for state (from bootstrap) |
+
+Run [infra/bootstrap](infra/bootstrap/README.md) once before the first merge so
+the protected **production** environment, `DOPPLER_TOKEN`, R2 bucket, and
+scoped R2 token exist.
 
 The Cloudflare account ID and workers.dev subdomain name are intentionally
 omitted from committed files. They may still appear in older git history.
@@ -64,9 +67,47 @@ requires:
 The same check is implemented in `scripts/check-production-site.mjs` (`npm run
 check:coming-soon`). It retries with backoff for about five minutes (configurable
 via `CHECK_PRODUCTION_*` env vars) so TLS on a new custom domain can finish
-provisioning. If the smoke test still fails after a successful OpenTofu apply,
-the workflow rolls back the Worker to the version captured immediately before
-deploy (or skips rollback on the first deploy when no prior Worker existed).
+provisioning. The workflow runs the check again after a 15-minute wait and
+confirms `activism.grandkru.com` still does not show the coming-soon page.
+
+If the smoke test or recheck fails after a successful OpenTofu apply, the
+workflow rolls back the Worker to the version captured immediately before
+deploy (or skips Worker rollback on the first deploy when no prior Worker
+existed).
+
+### Release tags and rollback
+
+Each successful deploy pushes a Git tag `release/<run>-<sha>`. To redeploy a
+previous release, run **Deploy production** via **Run workflow**, set
+`rollback_release_tag` to the earlier tag (for example
+`release/42-abc1234`), and approve the production environment.
+
+Manual Worker version rollback (without checking out a tag) uses the
+`rollback_version_id` workflow input with a Cloudflare Workers version UUID.
+
+**First deploy, smoke or recheck failed:** there is no previous Worker version
+to roll back to. Remove the new stack:
+
+```bash
+doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
+  bash -ec '
+    export TF_VAR_cloudflare_account_id="$CLOUDFLARE_ACCOUNT_ID"
+    export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+    cat > /tmp/backend.hcl <<EOF
+bucket = "$TF_STATE_BUCKET"
+key    = "${TF_STATE_KEY:-queerglobal-grandkru/terraform.tfstate}"
+region = "${TF_STATE_REGION:-auto}"
+endpoint = "$TF_STATE_ENDPOINT"
+skip_credentials_validation = true
+skip_metadata_api_check = true
+skip_region_validation = true
+EOF
+    tofu -chdir=infra init -backend-config=/tmp/backend.hcl
+    tofu -chdir=infra destroy -auto-approve \
+      -target=cloudflare_workers_custom_domain.coming_soon \
+      -target=cloudflare_workers_script.coming_soon
+  '
+```
 
 ### Notes for running this
 
@@ -75,49 +116,19 @@ deploy (or skips rollback on the first deploy when no prior Worker existed).
    not add a conflicting CNAME for `queerglobal` before apply: an existing
    CNAME blocks Custom Domains.
 
-2. Confirm the workers.dev preview URL printed by Wrangler or shown in the
-   Cloudflare dashboard (Workers and Pages, then your Worker, then the
-   workers.dev subdomain shown for the account).
-
-3. If apply succeeds but the hostname is missing (token lacks zone write, or
-   a leftover CNAME exists):
-
-   - Cloudflare dashboard: Workers and Pages, then `queerglobal-grandkru`, then
-     Settings, then Domains and Routes, then Add, then Custom Domain, then
-     `queerglobal.grandkru.com`
-   - If a leftover CNAME exists on `queerglobal` in the `grandkru.com` zone,
-     delete it first, then add the Custom Domain so Cloudflare can create the
-     record.
-
-4. Do **not** point `queerglobal.com` or `www.queerglobal.com` at this
+2. Do **not** point `queerglobal.com` or `www.queerglobal.com` at this
    Worker. Do **not** add `/queerglobal` on `activism-grandkru-hub`.
 
 ### OpenTofu remote state (R2)
 
 Production deploys store state in a single remote bucket so GitHub Actions and
-anyone running deploys use the same state file. Configure these in Doppler (synced to the GitHub
-`production` environment); the deploy workflow passes them to OpenTofu init:
+anyone running deploys use the same state file. The bootstrap stack creates the
+bucket and a scoped R2 API token; copy those outputs into Doppler (`TF_STATE_*`,
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`). The deploy workflow passes them
+to OpenTofu init.
 
-| Variable | Purpose |
-|----------|---------|
-| `TF_STATE_BUCKET` | Bucket name (for example an R2 bucket in Grand Kru Cloudflare) |
-| `TF_STATE_KEY` | State object key (default `queerglobal-grandkru/terraform.tfstate`) |
-| `TF_STATE_REGION` | Backend region (`auto` for R2) |
-| `TF_STATE_ENDPOINT` | R2 S3 endpoint: `https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com` |
-| `AWS_ACCESS_KEY_ID` | R2 access key ID (S3-compatible API) |
-| `AWS_SECRET_ACCESS_KEY` | R2 secret access key |
-
-The deploy workflow runs `scripts/ensure-tf-state-bucket.mjs` before OpenTofu
-init to create the R2 bucket when needed (idempotent). To create it ahead of
-time from a workstation:
-
-```bash
-doppler run -- node scripts/ensure-tf-state-bucket.mjs
-```
-
-Besides Doppler secrets and GitHub environment approval, no other manual
-infrastructure steps are required. See [infra/README.md](infra/README.md) for
-backend.hcl details.
+Besides bootstrap, Doppler secrets, and GitHub environment approval, no other
+manual infrastructure steps are required. See [infra/README.md](infra/README.md).
 
 Break-glass manual apply (when CI is unavailable): see [infra/README.md](infra/README.md).
 

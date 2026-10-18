@@ -39,6 +39,8 @@ jobs:
         run: |
           tofu -chdir=infra init -backend=false
           tofu -chdir=infra validate
+          tofu -chdir=infra/bootstrap init -backend=false
+          tofu -chdir=infra/bootstrap validate
 
       - name: Run tests
         run: npm test
