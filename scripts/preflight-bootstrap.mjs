@@ -4,6 +4,7 @@
  * @module preflight-bootstrap
  */
 
+import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -101,9 +102,14 @@ export async function preflightBootstrapDopplerProject(options = {}) {
 }
 
 /**
+ * @param {{
+ *   fetchImpl?: typeof fetch,
+ *   markerPath?: string,
+ * }} [options]
  * @returns {Promise<number>}
  */
-export async function runPreflightBootstrapCli() {
+export async function runPreflightBootstrapCli(options = {}) {
+  const fetchImpl = options.fetchImpl ?? fetch;
   const reviewersRaw = process.env.TF_VAR_production_reviewer_usernames ?? "";
 
   let reviewers = [];
@@ -118,22 +124,28 @@ export async function runPreflightBootstrapCli() {
     return 1;
   }
 
-  const cloudflare = await preflightBootstrapCloudflare({});
+  const cloudflare = await preflightBootstrapCloudflare({ fetchImpl });
   if (!cloudflare.ok) {
     console.error(cloudflare.error);
     return 1;
   }
 
-  const github = await preflightBootstrapGithubAdmin({});
+  const github = await preflightBootstrapGithubAdmin({ fetchImpl });
   if (!github.ok) {
     console.error(github.error);
     return 1;
   }
 
-  const doppler = await preflightBootstrapDopplerProject({});
+  const doppler = await preflightBootstrapDopplerProject({ fetchImpl });
   if (!doppler.ok) {
     console.error(doppler.error);
     return 1;
+  }
+
+  const markerPath =
+    options.markerPath ?? process.env.BOOTSTRAP_PREFLIGHT_MARKER ?? "";
+  if (markerPath) {
+    await fs.writeFile(markerPath, `${Date.now()}\n`, { mode: 0o600 });
   }
 
   console.log("OK bootstrap preflight passed.");
@@ -145,5 +157,5 @@ if (
   process.argv[1] !== undefined &&
   path.resolve(process.argv[1]) === path.resolve(thisFile)
 ) {
-  process.exitCode = await runPreflightBootstrapCli();
+  process.exitCode = await runPreflightBootstrapCli({});
 }

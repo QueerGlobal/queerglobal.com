@@ -21,11 +21,11 @@ Bootstrap apply fails if `doppler_config == doppler_bootstrap_config` (precondit
 
 ### Cloudflare (bootstrap apply only)
 
-Create a **user or account API token** with **allow** policies for:
+Create a **user or account API token** that can pass the bootstrap preflight capability probes:
 
-- **Account API Tokens Write** on this account
-- **Workers R2 Storage Write** on this account
-- **Zone Read** on **`grandkru.com`**
+- **Account API Tokens Write** (`GET /accounts/{id}/tokens`)
+- **Workers R2 Storage** read on this account (`GET /accounts/{id}/r2/buckets`; write is not provable by a read probe, so the first apply fails closed if R2 write is missing)
+- **Zone Read** for **`grandkru.com`** on this account (`GET /zones?name=grandkru.com&account.id={id}` must return exactly that zone)
 
 Run `node scripts/preflight-bootstrap-cloudflare.mjs` after exporting `CLOUDFLARE_API_TOKEN` and `TF_VAR_cloudflare_account_id`.
 
@@ -67,7 +67,7 @@ export TF_VAR_production_reviewer_usernames='["your-github-username"]'
 node scripts/preflight-bootstrap.mjs
 ```
 
-Preflight order: Cloudflare token policies, `GET /repos/QueerGlobal/queerglobal.com` (`permissions.admin`), Doppler project read with the management token.
+Preflight order: Cloudflare capability probes (verify active, then R2, zone, account tokens), `GET /repos/QueerGlobal/queerglobal.com` (`permissions.admin`), Doppler project read with the management token.
 
 ## Bootstrap Doppler setup (after preflight)
 
@@ -85,7 +85,7 @@ openssl rand -base64 24 | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE \
 
 ## State encryption, backup, and restore
 
-OpenTofu 1.13+ encrypts bootstrap state and plan files with PBKDF2 + AES-GCM (`versions.tf`). The current passphrase is on key provider **`bootstrap_v2`** (primary method `bootstrap`); during rotation the previous passphrase stays on provider **`bootstrap`** (fallback method `bootstrap_previous`) until you remove it. Before each rotation apply, remove `infra/bootstrap/terraform.tfstate.backup` so OpenTofu does not try to decrypt a stale backup with the new passphrase.
+OpenTofu 1.13+ encrypts bootstrap state and plan files with PBKDF2 + AES-GCM under key provider **`bootstrap`** (`versions.tf`).
 
 Load the current passphrase from the bootstrap Doppler config:
 
@@ -107,7 +107,7 @@ cat infra/bootstrap/terraform.tfstate | doppler secrets set BOOTSTRAP_STATE_ENCR
   -c "$TF_VAR_doppler_bootstrap_config"
 ```
 
-On a fresh machine, `bash scripts/bootstrap-tofu-init.sh` restores from `BOOTSTRAP_STATE_ENCRYPTED` when the local file is missing.
+On a fresh machine, `bash scripts/bootstrap-tofu-init.sh` restores from `BOOTSTRAP_STATE_ENCRYPTED` when the local file is missing. For the first bootstrap on a new machine with no backup yet, set `BOOTSTRAP_FIRST_RUN=1` so a missing Doppler backup does not abort init.
 
 ## Apply workflow (local state only)
 
@@ -133,17 +133,40 @@ No manual copying of Cloudflare or Doppler deploy secrets is required; the provi
 
 ## Passphrase rotation
 
-1. Set the **new** passphrase in Doppler (`BOOTSTRAP_STATE_PASSPHRASE`).
-2. Apply with both passphrases so OpenTofu decrypts with the **`bootstrap`** fallback (old passphrase) and re-encrypts with **`bootstrap_v2`** (new passphrase):
+Store the new passphrase in the bootstrap Doppler config as **`BOOTSTRAP_STATE_PASSPHRASE_NEXT`** (stdin, not argv), then load both passphrases:
 
 ```bash
-export TF_VAR_bootstrap_state_passphrase="$NEW_PASSPHRASE"
-export TF_VAR_bootstrap_state_passphrase_previous="$OLD_PASSPHRASE"
-tofu -chdir=infra/bootstrap apply
+openssl rand -base64 24 | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE_NEXT \
+  -p "$TF_VAR_doppler_project" \
+  -c "$TF_VAR_doppler_bootstrap_config"
+
+export TF_VAR_bootstrap_state_passphrase="$(
+  doppler secrets get BOOTSTRAP_STATE_PASSPHRASE --plain \
+    -p "$TF_VAR_doppler_project" \
+    -c "$TF_VAR_doppler_bootstrap_config"
+)"
+export TF_VAR_bootstrap_state_passphrase_next="$(
+  doppler secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT --plain \
+    -p "$TF_VAR_doppler_project" \
+    -c "$TF_VAR_doppler_bootstrap_config"
+)"
+
+bash scripts/bootstrap-passphrase-rotate.sh
 bash scripts/bootstrap-state-backup.sh
 ```
 
-3. Remove the fallback: unset `TF_VAR_bootstrap_state_passphrase_previous`, apply once more, and back up state again. Optionally trim `versions.tf` to drop the unused `bootstrap` key provider after rotation is complete.
+Promote the new passphrase in Doppler (stdin) and remove `BOOTSTRAP_STATE_PASSPHRASE_NEXT`:
+
+```bash
+printf '%s' "$TF_VAR_bootstrap_state_passphrase" | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE \
+  -p "$TF_VAR_doppler_project" \
+  -c "$TF_VAR_doppler_bootstrap_config"
+doppler secrets delete BOOTSTRAP_STATE_PASSPHRASE_NEXT \
+  -p "$TF_VAR_doppler_project" \
+  -c "$TF_VAR_doppler_bootstrap_config" --yes
+```
+
+Or set `BOOTSTRAP_ROTATE_PROMOTE_DOPPLER=1` when running `bash scripts/bootstrap-passphrase-rotate.sh` to perform that promotion automatically after a successful rotation.
 
 ## Rotate GitHub DOPPLER_TOKEN
 
@@ -177,7 +200,7 @@ Import each `doppler_secret.*` by Doppler secret name if needed, then run `tofu 
 
 These steps do **not** assume the leaked Cloudflare or GitHub tokens still work.
 
-1. **Passphrase rotation:** set a new `BOOTSTRAP_STATE_PASSPHRASE` in the bootstrap Doppler config. Restore local state from `BOOTSTRAP_STATE_ENCRYPTED` if needed (`bash scripts/bootstrap-tofu-init.sh`). Apply with `TF_VAR_bootstrap_state_passphrase` (new) and `TF_VAR_bootstrap_state_passphrase_previous` (old), then back up with `bash scripts/bootstrap-state-backup.sh`. Unset the previous passphrase and apply again to drop the fallback provider.
+1. **Passphrase rotation:** set `BOOTSTRAP_STATE_PASSPHRASE_NEXT` in the bootstrap Doppler config, restore local state from `BOOTSTRAP_STATE_ENCRYPTED` if needed (`bash scripts/bootstrap-tofu-init.sh`), run `bash scripts/bootstrap-passphrase-rotate.sh`, then `bash scripts/bootstrap-state-backup.sh`, and promote `BOOTSTRAP_STATE_PASSPHRASE_NEXT` to `BOOTSTRAP_STATE_PASSPHRASE`.
 2. **Cloudflare:** revoke compromised tokens in the dashboard. Create a **new** bootstrap Cloudflare token (same policies as preflight), export it as `CLOUDFLARE_API_TOKEN`, run preflight, then `tofu -chdir=infra/bootstrap apply` to mint replacements and refresh Doppler deploy secrets.
 3. **GitHub Doppler deploy token:** run `make rotate-doppler-github-token` (or the `-replace` command above) with a valid bootstrap GitHub PAT and management token.
 

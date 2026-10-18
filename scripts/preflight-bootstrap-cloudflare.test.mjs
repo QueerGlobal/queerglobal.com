@@ -2,136 +2,110 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
-  missingCloudflareBootstrapPolicies,
+  cloudflareProbeAccountTokensWrite,
+  cloudflareProbeR2Buckets,
+  cloudflareProbeZoneOnAccount,
+  cloudflareVerifyActiveToken,
   preflightBootstrapCloudflare,
-  REQUIRED_CLOUDFLARE_PERMISSION_GROUPS,
 } from "./preflight-bootstrap-cloudflare.mjs";
 
 const ACCOUNT_ID = "0123456789abcdef0123456789abcdef";
-const ZONE_ID = "zone-grandkru-id";
+const ZONE_ID = "4f8b3c2d1e0a9b8c7d6e5f4a3b2c1d0e";
 
 /**
- * @param {object} options
  * @returns {typeof fetch}
  */
-function makeFullAccountTokenFetch(options) {
-  const tokenId = options.tokenId ?? "token-full";
+function fullTokenFetchImpl() {
   return async (url) => {
     const path = String(url);
     if (path.includes(`/accounts/${ACCOUNT_ID}/tokens/verify`)) {
-      return { ok: true, json: async () => ({ success: true, result: { id: tokenId } }) };
-    }
-    if (path.includes(`/accounts/${ACCOUNT_ID}/tokens/${tokenId}`)) {
       return {
         ok: true,
         json: async () => ({
           success: true,
-          result: {
-            policies: [
-              {
-                effect: "allow",
-                permission_groups: [{ name: "Account API Tokens Write" }],
-                resources: { [`com.cloudflare.api.account.${ACCOUNT_ID}`]: "*" },
-              },
-              {
-                effect: "allow",
-                permission_groups: [{ name: "Workers R2 Storage Write" }],
-                resources: { [`com.cloudflare.api.account.${ACCOUNT_ID}`]: "*" },
-              },
-              {
-                effect: "allow",
-                permission_groups: [{ name: "Zone Read" }],
-                resources: { [`com.cloudflare.api.account.zone.${ZONE_ID}`]: "*" },
-              },
-            ],
-          },
+          errors: [],
+          messages: [],
+          result: { id: "token-id", status: "active" },
         }),
       };
     }
-    if (path.includes("/zones?name=grandkru.com")) {
+    if (path.includes(`/accounts/${ACCOUNT_ID}/r2/buckets`)) {
       return {
         ok: true,
-        json: async () => ({ success: true, result: [{ id: ZONE_ID, name: "grandkru.com" }] }),
+        json: async () => ({
+          success: true,
+          errors: [],
+          messages: [],
+          result: [{ name: "existing-bucket", creation_date: "2024-01-01T00:00:00.000Z" }],
+        }),
+      };
+    }
+    if (path.includes("/zones?")) {
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          errors: [],
+          messages: [],
+          result: [
+            {
+              id: ZONE_ID,
+              name: "grandkru.com",
+              account: { id: ACCOUNT_ID, name: "Example account" },
+            },
+          ],
+        }),
+      };
+    }
+    if (path.includes(`/accounts/${ACCOUNT_ID}/tokens`) && !path.includes("/verify")) {
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          errors: [],
+          messages: [],
+          result: [{ id: "listed-token", name: "example" }],
+        }),
       };
     }
     throw new Error(`unexpected url ${url}`);
   };
 }
 
-describe("missingCloudflareBootstrapPolicies", () => {
-  it("requires all bootstrap permission groups with correct scope", () => {
-    const policies = [
-      {
-        effect: "allow",
-        permission_groups: [{ name: "Account API Tokens Write" }],
-        resources: { [`com.cloudflare.api.account.${ACCOUNT_ID}`]: "*" },
-      },
-      {
-        effect: "allow",
-        permission_groups: [{ name: "Workers R2 Storage Write" }],
-        resources: { [`com.cloudflare.api.account.${ACCOUNT_ID}`]: "*" },
-      },
-      {
-        effect: "allow",
-        permission_groups: [{ name: "Zone Read" }],
-        resources: { [`com.cloudflare.api.account.zone.${ZONE_ID}`]: "*" },
-      },
-    ];
-    assert.equal(missingCloudflareBootstrapPolicies(policies, ACCOUNT_ID, ZONE_ID), null);
-    assert.equal(REQUIRED_CLOUDFLARE_PERMISSION_GROUPS.length, 3);
-  });
-});
-
-describe("preflightBootstrapCloudflare", () => {
-  it("passes a full account API token", async () => {
+describe("preflightBootstrapCloudflare capability probes", () => {
+  it("passes a full account token (real response shapes)", async () => {
     const result = await preflightBootstrapCloudflare({
       token: "full-token",
       accountId: ACCOUNT_ID,
-      fetchImpl: makeFullAccountTokenFetch({}),
+      fetchImpl: fullTokenFetchImpl(),
     });
     assert.equal(result.ok, true);
   });
 
-  it("fails a restricted token missing R2 write", async () => {
-    const tokenId = "token-restricted";
+  it("fails when R2 probe returns 403 (deny respected)", async () => {
     const fetchImpl = async (url) => {
       const path = String(url);
-      if (path.includes(`/accounts/${ACCOUNT_ID}/tokens/verify`)) {
-        return { ok: true, json: async () => ({ success: true, result: { id: tokenId } }) };
-      }
-      if (path.includes(`/accounts/${ACCOUNT_ID}/tokens/${tokenId}`)) {
+      if (path.includes("/tokens/verify")) {
         return {
           ok: true,
+          json: async () => ({ success: true, result: { status: "active", id: "t" } }),
+        };
+      }
+      if (path.includes("/r2/buckets")) {
+        return {
+          ok: false,
+          status: 403,
           json: async () => ({
-            success: true,
-            result: {
-              policies: [
-                {
-                  effect: "allow",
-                  permission_groups: [{ name: "Account API Tokens Write" }],
-                  resources: { [`com.cloudflare.api.account.${ACCOUNT_ID}`]: "*" },
-                },
-                {
-                  effect: "allow",
-                  permission_groups: [{ name: "Zone Read" }],
-                  resources: { [`com.cloudflare.api.account.zone.${ZONE_ID}`]: "*" },
-                },
-              ],
-            },
+            success: false,
+            errors: [{ code: 10000, message: "Authentication error" }],
+            messages: [],
           }),
         };
       }
-      if (path.includes("/zones?name=grandkru.com")) {
-        return {
-          ok: true,
-          json: async () => ({ success: true, result: [{ id: ZONE_ID, name: "grandkru.com" }] }),
-        };
-      }
-      throw new Error(`unexpected url ${url}`);
+      throw new Error(path);
     };
-
-    const result = await preflightBootstrapCloudflare({
-      token: "restricted",
+    const result = await cloudflareProbeR2Buckets({
+      token: "t",
       accountId: ACCOUNT_ID,
       fetchImpl,
     });
@@ -139,6 +113,77 @@ describe("preflightBootstrapCloudflare", () => {
     if (result.ok) {
       throw new Error("expected failure");
     }
-    assert.match(result.error, /Workers R2 Storage Write/);
+    assert.match(result.error, /R2 probe failed/);
+  });
+});
+
+describe("cloudflareProbeZoneOnAccount", () => {
+  it("rejects a zone on another account", async () => {
+    const fetchImpl = async () => ({
+      ok: true,
+      json: async () => ({
+        success: true,
+        errors: [],
+        messages: [],
+        result: [
+          {
+            id: ZONE_ID,
+            name: "grandkru.com",
+            account: { id: "fedcba9876543210fedcba9876543210" },
+          },
+        ],
+      }),
+    });
+    const result = await cloudflareProbeZoneOnAccount({
+      token: "t",
+      accountId: ACCOUNT_ID,
+      zoneName: "grandkru.com",
+      fetchImpl,
+    });
+    assert.equal(result.ok, false);
+    if (result.ok) {
+      throw new Error("expected failure");
+    }
+    assert.match(result.error, /not on account/);
+  });
+});
+
+describe("cloudflareVerifyActiveToken", () => {
+  it("requires active status from verify", async () => {
+    const fetchImpl = async (url) => {
+      if (String(url).includes("/tokens/verify")) {
+        return {
+          ok: true,
+          json: async () => ({ success: true, result: { status: "expired" } }),
+        };
+      }
+      throw new Error(url);
+    };
+    const result = await cloudflareVerifyActiveToken({
+      token: "t",
+      accountId: ACCOUNT_ID,
+      fetchImpl,
+    });
+    assert.equal(result.ok, false);
+  });
+});
+
+describe("cloudflareProbeAccountTokensWrite", () => {
+  it("fails when account token list is forbidden", async () => {
+    const fetchImpl = async () => ({
+      ok: false,
+      status: 403,
+      json: async () => ({
+        success: false,
+        errors: [{ code: 10000, message: "Forbidden" }],
+        messages: [],
+      }),
+    });
+    const result = await cloudflareProbeAccountTokensWrite({
+      token: "t",
+      accountId: ACCOUNT_ID,
+      fetchImpl,
+    });
+    assert.equal(result.ok, false);
   });
 });

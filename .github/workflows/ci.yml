@@ -42,7 +42,7 @@ jobs:
         run: |
           tofu -chdir=infra init -backend=false
           tofu -chdir=infra validate
-          tofu -chdir=infra/bootstrap init -backend=false
+          tofu -chdir=infra/bootstrap init -input=false
           tofu -chdir=infra/bootstrap validate
 
       - name: Run OpenTofu mock tests
@@ -52,5 +52,5 @@ jobs:
           tofu -chdir=infra test
           tofu -chdir=infra/bootstrap test
 
-      - name: Run tests
+      - name: Run tests and bootstrap e2e scripts
         run: npm test

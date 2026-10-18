@@ -111,15 +111,15 @@ variable "bootstrap_state_passphrase" {
   }
 }
 
-variable "bootstrap_state_passphrase_previous" {
+variable "bootstrap_state_passphrase_next" {
   type        = string
   sensitive   = true
   default     = ""
-  description = "During passphrase rotation only: previous passphrase for encryption fallback (min 16 characters when set)."
+  description = "Rotation only (scripts/bootstrap-passphrase-rotate.sh). Empty otherwise."
 
   validation {
-    condition     = var.bootstrap_state_passphrase_previous == "" || length(var.bootstrap_state_passphrase_previous) >= 16
-    error_message = "bootstrap_state_passphrase_previous must be empty or at least 16 characters."
+    condition     = var.bootstrap_state_passphrase_next == "" || length(var.bootstrap_state_passphrase_next) >= 16
+    error_message = "bootstrap_state_passphrase_next must be empty or at least 16 characters."
   }
 }
 

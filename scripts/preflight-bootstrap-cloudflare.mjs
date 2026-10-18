@@ -1,5 +1,5 @@
 /**
- * Verify the bootstrap Cloudflare API token before OpenTofu writes.
+ * Verify the bootstrap Cloudflare API token before OpenTofu writes (capability probes).
  *
  * @module preflight-bootstrap-cloudflare
  */
@@ -8,13 +8,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const API = "https://api.cloudflare.com/client/v4";
-
-/** @type {readonly string[]} */
-export const REQUIRED_CLOUDFLARE_PERMISSION_GROUPS = [
-  "Account API Tokens Write",
-  "Workers R2 Storage Write",
-  "Zone Read",
-];
 
 /**
  * @param {string} token
@@ -32,74 +25,154 @@ async function cloudflareGet(token, pathSuffix, fetchImpl) {
 }
 
 /**
- * @param {unknown} policies
- * @param {string} accountId
- * @param {string} zoneId
- * @returns {string | null}
+ * @param {unknown} body
+ * @returns {body is { success: true, result: { status: string } }}
  */
-export function missingCloudflareBootstrapPolicies(policies, accountId, zoneId) {
-  if (!Array.isArray(policies)) {
-    return "Token has no policies.";
-  }
-
-  const accountResource = `com.cloudflare.api.account.${accountId}`;
-  const zoneResource = `com.cloudflare.api.account.zone.${zoneId}`;
-
-  /** @type {Map<string, { account: boolean, zone: boolean }>} */
-  const found = new Map(
-    REQUIRED_CLOUDFLARE_PERMISSION_GROUPS.map((name) => [name, { account: false, zone: false }]),
+function verifyBodyActive(body) {
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    body.success === true &&
+    typeof body.result === "object" &&
+    body.result !== null &&
+    body.result.status === "active"
   );
+}
 
-  for (const policy of policies) {
-    if (policy?.effect !== "allow") {
-      continue;
-    }
-    const resources = policy.resources ?? {};
-    const resourceKeys = Object.keys(resources);
-    const onAccount = resourceKeys.some(
-      (key) => key === accountResource || key === "com.cloudflare.api.account.*",
-    );
-    const onZone = resourceKeys.some(
-      (key) =>
-        key === zoneResource ||
-        key === "com.cloudflare.api.account.zone.*" ||
-        key.endsWith(`.zone.${zoneId}`),
-    );
-
-    for (const group of policy.permission_groups ?? []) {
-      const name = group?.name;
-      if (typeof name !== "string" || !found.has(name)) {
-        continue;
-      }
-      const entry = found.get(name);
-      if (!entry) {
-        continue;
-      }
-      if (name === "Zone Read") {
-        if (onZone || onAccount) {
-          entry.zone = true;
-        }
-      } else if (onAccount) {
-        entry.account = true;
-      }
-    }
+/**
+ * @param {{
+ *   token: string,
+ *   accountId: string,
+ *   fetchImpl: typeof fetch,
+ * }} input
+ * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
+ */
+export async function cloudflareVerifyActiveToken(input) {
+  const accountVerify = await cloudflareGet(
+    input.token,
+    `/accounts/${input.accountId}/tokens/verify`,
+    input.fetchImpl,
+  );
+  const accountBody = await accountVerify.json();
+  if (accountVerify.ok && verifyBodyActive(accountBody)) {
+    return { ok: true };
   }
 
-  for (const name of REQUIRED_CLOUDFLARE_PERMISSION_GROUPS) {
-    const entry = found.get(name);
-    if (!entry) {
-      return `Missing allow policy for ${name}.`;
-    }
-    if (name === "Zone Read") {
-      if (!entry.zone) {
-        return `Zone Read must be allowed for this account and zone (grandkru.com).`;
-      }
-    } else if (!entry.account) {
-      return `${name} must be allowed for account ${accountId}.`;
-    }
+  const userVerify = await cloudflareGet(input.token, "/user/tokens/verify", input.fetchImpl);
+  const userBody = await userVerify.json();
+  if (userVerify.ok && verifyBodyActive(userBody)) {
+    return { ok: true };
   }
 
-  return null;
+  const message =
+    userBody.errors?.[0]?.message ??
+    accountBody.errors?.[0]?.message ??
+    userVerify.statusText;
+  return { ok: false, error: `Cloudflare token verify failed (must be active): ${message}` };
+}
+
+/**
+ * @param {{
+ *   token: string,
+ *   accountId: string,
+ *   fetchImpl: typeof fetch,
+ * }} input
+ * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
+ */
+export async function cloudflareProbeR2Buckets(input) {
+  const response = await cloudflareGet(
+    input.token,
+    `/accounts/${input.accountId}/r2/buckets`,
+    input.fetchImpl,
+  );
+  const body = await response.json();
+  if (!response.ok || body.success !== true) {
+    const code = body.errors?.[0]?.code;
+    const message = body.errors?.[0]?.message ?? response.statusText;
+    return {
+      ok: false,
+      error: `Cloudflare R2 probe failed (need Workers R2 Storage access on account ${input.accountId}): ${message}${code !== undefined ? ` (code ${code})` : ""}. R2 write cannot be verified by a read probe; the first bootstrap apply fails closed if write is missing.`,
+    };
+  }
+  if (!Array.isArray(body.result)) {
+    return { ok: false, error: "Cloudflare R2 probe returned an unexpected payload." };
+  }
+  return { ok: true };
+}
+
+/**
+ * @param {{
+ *   token: string,
+ *   accountId: string,
+ *   zoneName: string,
+ *   fetchImpl: typeof fetch,
+ * }} input
+ * @returns {Promise<{ ok: true, zoneId: string } | { ok: false, error: string }>}
+ */
+export async function cloudflareProbeZoneOnAccount(input) {
+  const query = new URLSearchParams({
+    name: input.zoneName,
+    "account.id": input.accountId,
+  });
+  const response = await cloudflareGet(
+    input.token,
+    `/zones?${query.toString()}`,
+    input.fetchImpl,
+  );
+  const body = await response.json();
+  if (!response.ok || body.success !== true) {
+    const message = body.errors?.[0]?.message ?? response.statusText;
+    return {
+      ok: false,
+      error: `Cloudflare zone probe failed for ${input.zoneName} on account ${input.accountId}: ${message}`,
+    };
+  }
+  if (!Array.isArray(body.result) || body.result.length !== 1) {
+    return {
+      ok: false,
+      error: `Expected exactly one zone named ${input.zoneName} on account ${input.accountId}.`,
+    };
+  }
+  const zone = body.result[0];
+  const zoneAccountId = zone.account?.id ?? zone.account_id;
+  if (zoneAccountId !== input.accountId) {
+    return {
+      ok: false,
+      error: `Zone ${input.zoneName} is not on account ${input.accountId}.`,
+    };
+  }
+  if (typeof zone.id !== "string" || zone.id.length === 0) {
+    return { ok: false, error: `Zone ${input.zoneName} response missing id.` };
+  }
+  return { ok: true, zoneId: zone.id };
+}
+
+/**
+ * @param {{
+ *   token: string,
+ *   accountId: string,
+ *   fetchImpl: typeof fetch,
+ * }} input
+ * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
+ */
+export async function cloudflareProbeAccountTokensWrite(input) {
+  const response = await cloudflareGet(
+    input.token,
+    `/accounts/${input.accountId}/tokens`,
+    input.fetchImpl,
+  );
+  const body = await response.json();
+  if (!response.ok || body.success !== true) {
+    const message = body.errors?.[0]?.message ?? response.statusText;
+    return {
+      ok: false,
+      error: `Cloudflare account API token write probe failed (GET /accounts/{id}/tokens): ${message}`,
+    };
+  }
+  if (!Array.isArray(body.result)) {
+    return { ok: false, error: "Cloudflare account tokens probe returned an unexpected payload." };
+  }
+  return { ok: true };
 }
 
 /**
@@ -124,72 +197,29 @@ export async function preflightBootstrapCloudflare(options) {
     return { ok: false, error: "TF_VAR_cloudflare_account_id is required." };
   }
 
-  let tokenKind = "user";
-  let tokenId = "";
+  const verify = await cloudflareVerifyActiveToken({ token, accountId, fetchImpl });
+  if (!verify.ok) {
+    return verify;
+  }
 
-  const accountVerify = await cloudflareGet(
+  const r2 = await cloudflareProbeR2Buckets({ token, accountId, fetchImpl });
+  if (!r2.ok) {
+    return r2;
+  }
+
+  const zone = await cloudflareProbeZoneOnAccount({
     token,
-    `/accounts/${accountId}/tokens/verify`,
-    fetchImpl,
-  );
-  const accountVerifyBody = await accountVerify.json();
-  if (accountVerify.ok && accountVerifyBody.success === true) {
-    tokenKind = "account";
-    tokenId = accountVerifyBody.result?.id ?? "";
-  } else {
-    const userVerify = await cloudflareGet(token, "/user/tokens/verify", fetchImpl);
-    const userVerifyBody = await userVerify.json();
-    if (!userVerify.ok || userVerifyBody.success !== true) {
-      const message =
-        userVerifyBody.errors?.[0]?.message ??
-        accountVerifyBody.errors?.[0]?.message ??
-        userVerify.statusText;
-      return { ok: false, error: `Cloudflare token verify failed: ${message}` };
-    }
-    tokenKind = "user";
-    tokenId = userVerifyBody.result?.id ?? "";
-  }
-
-  if (!tokenId) {
-    return { ok: false, error: "Cloudflare token verify did not return a token id." };
-  }
-
-  const tokenPath =
-    tokenKind === "account"
-      ? `/accounts/${accountId}/tokens/${tokenId}`
-      : `/user/tokens/${tokenId}`;
-  const tokenRecord = await cloudflareGet(token, tokenPath, fetchImpl);
-  const tokenRecordBody = await tokenRecord.json();
-  if (!tokenRecord.ok || tokenRecordBody.success !== true) {
-    const message = tokenRecordBody.errors?.[0]?.message ?? tokenRecord.statusText;
-    return { ok: false, error: `Cloudflare token record fetch failed: ${message}` };
-  }
-
-  const zones = await cloudflareGet(
-    token,
-    `/zones?name=${encodeURIComponent(zoneName)}`,
-    fetchImpl,
-  );
-  const zonesBody = await zones.json();
-  if (!zones.ok || zonesBody.success !== true) {
-    const message = zonesBody.errors?.[0]?.message ?? zones.statusText;
-    return { ok: false, error: `Cloudflare token cannot read zone ${zoneName}: ${message}` };
-  }
-  if (!Array.isArray(zonesBody.result) || zonesBody.result.length === 0) {
-    return { ok: false, error: `Zone ${zoneName} was not found in this account.` };
-  }
-  const zoneId = zonesBody.result[0]?.id;
-  if (typeof zoneId !== "string" || zoneId.length === 0) {
-    return { ok: false, error: `Zone ${zoneName} response missing zone id.` };
-  }
-
-  const policyError = missingCloudflareBootstrapPolicies(
-    tokenRecordBody.result?.policies,
     accountId,
-    zoneId,
-  );
-  if (policyError) {
-    return { ok: false, error: policyError };
+    zoneName,
+    fetchImpl,
+  });
+  if (!zone.ok) {
+    return zone;
+  }
+
+  const tokensWrite = await cloudflareProbeAccountTokensWrite({ token, accountId, fetchImpl });
+  if (!tokensWrite.ok) {
+    return tokensWrite;
   }
 
   return { ok: true };
