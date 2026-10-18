@@ -23,7 +23,7 @@ export TF_VAR_doppler_config=prd
 export TF_VAR_doppler_bootstrap_config=bootstrap
 export TF_VAR_bootstrap_state_passphrase=mock-bootstrap-passphrase-for-ci
 
-node "$root/scripts/bootstrap-e2e-preflight.mjs" "$marker"
+node "$root/scripts/test-helpers/bootstrap-e2e-preflight.mjs" "$marker"
 test -f "$marker"
 
 # Never read the real Doppler backup from a test, even if the CLI is logged in.

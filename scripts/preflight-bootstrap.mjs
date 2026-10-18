@@ -4,7 +4,6 @@
  * @module preflight-bootstrap
  */
 
-import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -103,9 +102,61 @@ export async function preflightBootstrapDopplerProject(options = {}) {
 }
 
 /**
+ * The deploy config (read by the CI service token) must not sit in the bootstrap
+ * environment: a branch config inherits its environment root, so a deploy config such
+ * as `bootstrap_prd` would hand CI the bootstrap passphrase and state backup.
+ *
+ * @param {{
+ *   dopplerToken?: string,
+ *   dopplerProject?: string,
+ *   deployConfig?: string,
+ *   bootstrapConfig?: string,
+ *   fetchImpl?: typeof fetch,
+ * }} [options]
+ * @returns {Promise<{ ok: true } | { ok: false, error: string }>}
+ */
+export async function preflightBootstrapDopplerIsolation(options = {}) {
+  const dopplerToken = options.dopplerToken ?? process.env.TF_VAR_doppler_management_token ?? "";
+  const project = options.dopplerProject ?? process.env.TF_VAR_doppler_project ?? "";
+  const deployConfig = options.deployConfig ?? process.env.TF_VAR_doppler_config ?? "prd";
+  const bootstrapConfig = options.bootstrapConfig ?? process.env.TF_VAR_doppler_bootstrap_config ?? "bootstrap";
+  const fetchImpl = options.fetchImpl ?? fetch;
+
+  const getConfig = async (config) => {
+    const query = new URLSearchParams({ project, config });
+    const response = await fetchImpl(`https://api.doppler.com/v3/configs/config?${query}`, {
+      headers: { Authorization: `Bearer ${dopplerToken}`, Accept: "application/json" },
+    });
+    const body = await response.json().catch(() => ({}));
+    return { status: response.status, ok: response.ok, config: body.config };
+  };
+
+  const deploy = await getConfig(deployConfig);
+  if (!deploy.ok || typeof deploy.config?.environment !== "string") {
+    return { ok: false, error: `Doppler deploy config ${project}/${deployConfig} could not be read.` };
+  }
+  if (deploy.config.environment === bootstrapConfig) {
+    return {
+      ok: false,
+      error: `Doppler deploy config ${deployConfig} is in environment ${bootstrapConfig}; CI would inherit bootstrap secrets.`,
+    };
+  }
+  const bootstrap = await getConfig(bootstrapConfig);
+  if (bootstrap.ok && bootstrap.config?.environment === deploy.config.environment) {
+    return {
+      ok: false,
+      error: `Doppler configs ${deployConfig} and ${bootstrapConfig} share environment ${deploy.config.environment}; use separate environments.`,
+    };
+  }
+  if (!bootstrap.ok && bootstrap.status !== 404) {
+    return { ok: false, error: `Doppler bootstrap config ${project}/${bootstrapConfig} check failed (HTTP ${bootstrap.status}).` };
+  }
+  return { ok: true };
+}
+
+/**
  * @param {{
  *   fetchImpl?: typeof fetch,
- *   markerPath?: string,
  * }} [options]
  * @returns {Promise<number>}
  */
@@ -143,9 +194,10 @@ export async function runPreflightBootstrapCli(options = {}) {
     return 1;
   }
 
-  const markerPath = options.markerPath ?? "";
-  if (markerPath) {
-    await fs.writeFile(markerPath, `${Date.now()}\n`, { mode: 0o600 });
+  const isolation = await preflightBootstrapDopplerIsolation({ fetchImpl });
+  if (!isolation.ok) {
+    console.error(isolation.error);
+    return 1;
   }
 
   console.log("OK bootstrap preflight passed.");

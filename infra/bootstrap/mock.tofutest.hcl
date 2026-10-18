@@ -223,6 +223,29 @@ run "reject_equal_doppler_configs" {
   ]
 }
 
+run "reject_deploy_config_branch_of_bootstrap" {
+  command = plan
+
+  plan_options {
+    refresh = false
+  }
+
+  variables {
+    cloudflare_account_id         = "00000000000000000000000000000001"
+    github_token                  = "ghp_mock_bootstrap_token_000000000000"
+    doppler_management_token      = "dp.pt.mock_management_token_000000000000"
+    doppler_project               = "queerglobal"
+    doppler_config                = "bootstrap_prd"
+    doppler_bootstrap_config      = "bootstrap"
+    production_reviewer_usernames = ["octocat"]
+    bootstrap_state_passphrase    = "mock-bootstrap-passphrase"
+  }
+
+  expect_failures = [
+    doppler_service_token.github_actions_production,
+  ]
+}
+
 run "reject_short_passphrase" {
   command = plan
 

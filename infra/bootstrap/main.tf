@@ -134,8 +134,8 @@ resource "doppler_service_token" "github_actions_production" {
 
   lifecycle {
     precondition {
-      condition     = var.doppler_config != var.doppler_bootstrap_config
-      error_message = "doppler_config and doppler_bootstrap_config must differ so the deploy service token cannot target bootstrap secrets."
+      condition     = var.doppler_config != var.doppler_bootstrap_config && !startswith(var.doppler_config, "${var.doppler_bootstrap_config}_")
+      error_message = "doppler_config must differ from doppler_bootstrap_config and must not be a branch of it, so the deploy service token cannot read or inherit bootstrap secrets."
     }
   }
 }

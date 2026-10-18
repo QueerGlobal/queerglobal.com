@@ -15,7 +15,7 @@ Bootstrap state is **encrypted**, kept **local** under `infra/bootstrap/terrafor
 - **`prd` (or `doppler_config`)**: deploy secrets and the read-only service token used as GitHub `DOPPLER_TOKEN`. CI and production workflows read this config only.
 - **`bootstrap` (or `doppler_bootstrap_config`)**: bootstrap-only secrets in a **separate Doppler environment**. Store **`BOOTSTRAP_STATE_PASSPHRASE`** and **`BOOTSTRAP_STATE_ENCRYPTED`** here. The deploy service token must **not** have access to this config.
 
-Bootstrap apply fails if `doppler_config == doppler_bootstrap_config` (precondition on the deploy service token) so GitHub Actions cannot receive a token scoped to bootstrap secrets.
+Bootstrap apply fails if `doppler_config` equals `doppler_bootstrap_config` or is a branch of it (precondition on the deploy service token), and preflight fails if the deploy config sits in the bootstrap environment or shares an environment with the bootstrap config. Do not add secret references from the deploy config to the bootstrap config: Doppler resolves references at read time, so the CI token would receive the referenced value.
 
 ## Required API tokens
 
@@ -24,7 +24,7 @@ Bootstrap apply fails if `doppler_config == doppler_bootstrap_config` (precondit
 Create a **user or account API token** that can pass the bootstrap preflight capability probes:
 
 - **Account API Tokens Write**: not provable by a read probe; the first apply fails at token creation if it is missing.
-- **Workers R2 Storage** read on this account (`GET /accounts/{id}/r2/buckets`; write is not provable by a read probe, so the first apply fails closed if R2 write is missing)
+- **Workers R2 Storage Write** on this account (creates the state bucket). Preflight can only prove read access (`GET /accounts/{id}/r2/buckets`); if write is missing, the first apply fails at bucket creation.
 - **Zone Read** for **`grandkru.com`** on this account (`GET /zones?name=grandkru.com&account.id={id}` must return exactly that zone)
 
 Run `node scripts/preflight-bootstrap-cloudflare.mjs` after exporting `CLOUDFLARE_API_TOKEN` and `TF_VAR_cloudflare_account_id`.
@@ -69,7 +69,7 @@ node scripts/preflight-bootstrap.mjs
 
 Preflight order: Cloudflare capability probes (verify active, then R2, then zone), `GET /repos/QueerGlobal/queerglobal.com` (`permissions.admin`), Doppler project read with the management token.
 
-Bootstrap Node CLIs (`preflight-bootstrap.mjs`, `preflight-bootstrap-cloudflare.mjs`, and the e2e preflight helper) send uncaught errors to Sentry when **`SENTRY_DSN`** is set in the environment. When unset, reporting is a no-op. Messages are scrubbed of known secret values and token-shaped strings before sending; payloads include only the scrubbed message and a `bootstrap-cli` tag.
+Bootstrap Node CLIs (`preflight-bootstrap.mjs` and `preflight-bootstrap-cloudflare.mjs`) send uncaught errors to Sentry when **`SENTRY_DSN`** is set in the environment. When unset, reporting is a no-op. Messages are scrubbed of known secret values and token-shaped strings before sending; payloads include only the scrubbed message and a `bootstrap-cli` tag.
 
 ## Automated tests
 
@@ -164,15 +164,18 @@ bash scripts/bootstrap-passphrase-rotate.sh
 Promote the new passphrase in Doppler (backup first so `BOOTSTRAP_STATE_ENCRYPTED` matches the passphrase that becomes current), then remove `BOOTSTRAP_STATE_PASSPHRASE_NEXT`:
 
 ```bash
-config="${TF_VAR_doppler_bootstrap_config:-bootstrap}"
-bash scripts/bootstrap-state-backup.sh
-next_from_doppler="$(doppler secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT --plain -p "$TF_VAR_doppler_project" -c "$config")"
-if [ "$next_from_doppler" != "$TF_VAR_bootstrap_state_passphrase_next" ]; then echo "NEXT does not match; not promoting." >&2; exit 1; fi
-printf '%s' "$next_from_doppler" | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE -p "$TF_VAR_doppler_project" -c "$config"
-unset next_from_doppler
-doppler secrets delete BOOTSTRAP_STATE_PASSPHRASE_NEXT \
-  -p "$TF_VAR_doppler_project" \
-  -c "$TF_VAR_doppler_bootstrap_config" --yes
+(
+  set -euo pipefail
+  config="${TF_VAR_doppler_bootstrap_config:-bootstrap}"
+  bash scripts/bootstrap-state-backup.sh
+  next_from_doppler="$(doppler secrets get BOOTSTRAP_STATE_PASSPHRASE_NEXT --plain -p "$TF_VAR_doppler_project" -c "$config")"
+  if [ "$next_from_doppler" != "$TF_VAR_bootstrap_state_passphrase_next" ]; then
+    echo "BOOTSTRAP_STATE_PASSPHRASE_NEXT does not match the rotation passphrase; not promoting." >&2
+    exit 1
+  fi
+  printf '%s' "$next_from_doppler" | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE -p "$TF_VAR_doppler_project" -c "$config"
+  doppler secrets delete BOOTSTRAP_STATE_PASSPHRASE_NEXT -p "$TF_VAR_doppler_project" -c "$config" --yes
+)
 ```
 
 Or set `BOOTSTRAP_ROTATE_PROMOTE_DOPPLER=1` when running `bash scripts/bootstrap-passphrase-rotate.sh`. After rotation succeeds, type **`promote`** when prompted; the script backs up state, reads `BOOTSTRAP_STATE_PASSPHRASE_NEXT`, verifies it matches the new passphrase, sets `BOOTSTRAP_STATE_PASSPHRASE`, then deletes `_NEXT`.

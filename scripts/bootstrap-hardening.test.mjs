@@ -6,7 +6,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import { preflightBootstrapCloudflare } from "./preflight-bootstrap-cloudflare.mjs";
-import { runPreflightBootstrapCli } from "./preflight-bootstrap.mjs";
+import { preflightBootstrapDopplerIsolation, runPreflightBootstrapCli } from "./preflight-bootstrap.mjs";
 import { ACCOUNT_ID, bootstrapStandInFetch, fetchWith } from "./test-helpers/fetch-stub.mjs";
 
 function stubBin(name, script) {
@@ -220,5 +220,88 @@ describe("bootstrap-passphrase-rotate.sh promote (real script, stub tofu and dop
     assert.equal(r.status, 1);
     assert.match(r.stderr, /unexpected reason/);
     assert.deepEqual(r.calls, []);
+  });
+});
+
+describe("Doppler deploy and bootstrap isolation", () => {
+  const base = { dopplerToken: "dp.pt.x", dopplerProject: "queerglobal", deployConfig: "prd", bootstrapConfig: "bootstrap" };
+  const configAt = (environment) =>
+    fetchWith((u) =>
+      u.includes("/v3/configs/config?") && new URL(u).searchParams.get("config") === "prd"
+        ? { ok: true, status: 200, json: async () => ({ config: { name: "prd", environment } }) }
+        : undefined,
+    );
+
+  it("baseline passes with separate environments", async () => {
+    assert.deepEqual(await preflightBootstrapDopplerIsolation({ ...base, fetchImpl: bootstrapStandInFetch() }), { ok: true });
+  });
+
+  it("rejects a deploy config inside the bootstrap environment", async () => {
+    const r = await preflightBootstrapDopplerIsolation({ ...base, fetchImpl: configAt("bootstrap") });
+    assert.equal(r.ok, false);
+    assert.match(r.error, /CI would inherit bootstrap secrets/);
+  });
+
+  it("rejects deploy and bootstrap configs that share an environment", async () => {
+    const fetchImpl = fetchWith((u) =>
+      u.includes("/v3/configs/config?") && new URL(u).searchParams.get("config") === "bootstrap"
+        ? { ok: true, status: 200, json: async () => ({ config: { name: "bootstrap", environment: "prd" } }) }
+        : undefined,
+    );
+    const r = await preflightBootstrapDopplerIsolation({ ...base, fetchImpl });
+    assert.equal(r.ok, false);
+    assert.match(r.error, /share environment prd/);
+  });
+
+  it("passes when the bootstrap config does not exist yet (404)", async () => {
+    const fetchImpl = fetchWith((u) =>
+      u.includes("/v3/configs/config?") && new URL(u).searchParams.get("config") === "bootstrap"
+        ? { ok: false, status: 404, json: async () => ({}) }
+        : undefined,
+    );
+    assert.deepEqual(await preflightBootstrapDopplerIsolation({ ...base, fetchImpl }), { ok: true });
+  });
+
+  it("fails closed when the bootstrap config check errors", async () => {
+    const fetchImpl = fetchWith((u) =>
+      u.includes("/v3/configs/config?") && new URL(u).searchParams.get("config") === "bootstrap"
+        ? { ok: false, status: 500, json: async () => ({}) }
+        : undefined,
+    );
+    const r = await preflightBootstrapDopplerIsolation({ ...base, fetchImpl });
+    assert.equal(r.ok, false);
+    assert.match(r.error, /check failed \(HTTP 500\)/);
+  });
+});
+
+describe("bootstrap preflight CLI runs the Doppler isolation check", () => {
+  it("exits 1 when the deploy config is in the bootstrap environment", async () => {
+    const saved = { ...process.env };
+    const errors = [];
+    const orig = console.error;
+    try {
+      Object.assign(process.env, {
+        CLOUDFLARE_API_TOKEN: "t",
+        TF_VAR_cloudflare_account_id: ACCOUNT_ID,
+        TF_VAR_github_token: "ghp_x",
+        TF_VAR_doppler_management_token: "dp.pt.x",
+        TF_VAR_doppler_project: "queerglobal",
+        TF_VAR_doppler_config: "prd",
+        TF_VAR_doppler_bootstrap_config: "bootstrap",
+        TF_VAR_production_reviewer_usernames: '["octocat"]',
+      });
+      console.error = (m) => errors.push(String(m));
+      const fetchImpl = fetchWith((u) =>
+        u.includes("/v3/configs/config?") && new URL(u).searchParams.get("config") === "prd"
+          ? { ok: true, status: 200, json: async () => ({ config: { name: "prd", environment: "bootstrap" } }) }
+          : undefined,
+      );
+      const code = await runPreflightBootstrapCli({ fetchImpl });
+      assert.equal(code, 1);
+      assert.match(errors.join("\n"), /CI would inherit bootstrap secrets/);
+    } finally {
+      console.error = orig;
+      process.env = saved;
+    }
   });
 });

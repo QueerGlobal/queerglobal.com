@@ -4,12 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
-import { bootstrapE2eFetchImpl } from "./bootstrap-e2e-preflight.mjs";
+import { runBootstrapE2ePreflight } from "./test-helpers/bootstrap-e2e-preflight.mjs";
 import {
   dopplerManagementTokenLooksValid,
   preflightBootstrapDopplerProject,
   preflightBootstrapGithubAdmin,
-  runPreflightBootstrapCli,
 } from "./preflight-bootstrap.mjs";
 
 describe("dopplerManagementTokenLooksValid", () => {
@@ -52,8 +51,8 @@ describe("preflightBootstrapDopplerProject", () => {
   });
 });
 
-describe("runPreflightBootstrapCli marker", () => {
-  it("writes a marker file after successful checks", async () => {
+describe("e2e preflight helper marker", () => {
+  it("writes a marker file only after the real preflight passes", async () => {
     const marker = path.join(
       await fs.mkdtemp(path.join(os.tmpdir(), "preflight-marker-")),
       "ok",
@@ -65,10 +64,7 @@ describe("runPreflightBootstrapCli marker", () => {
     process.env.TF_VAR_doppler_project = "queerglobal";
     process.env.TF_VAR_production_reviewer_usernames = '["octocat"]';
 
-    const code = await runPreflightBootstrapCli({
-      fetchImpl: bootstrapE2eFetchImpl(),
-      markerPath: marker,
-    });
+    const code = await runBootstrapE2ePreflight(marker);
     assert.equal(code, 0);
     const contents = await fs.readFile(marker, "utf8");
     assert.ok(contents.length > 0);

@@ -78,6 +78,18 @@ export function bootstrapStandInFetch() {
         json: async () => ({ permissions: { admin: true } }),
       };
     }
+    if (pathStr.startsWith("https://api.doppler.com/v3/configs/config?")) {
+      const config = new URL(pathStr).searchParams.get("config");
+      const environments = { prd: "prd", bootstrap: "bootstrap" };
+      if (!(config in environments)) {
+        return { ok: false, status: 404, json: async () => ({ messages: ["Could not find requested config"], success: false }) };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ config: { name: config, root: true, environment: environments[config], project: "queerglobal" }, success: true }),
+      };
+    }
     if (pathStr.includes("api.doppler.com/v3/projects/")) {
       return { ok: true, json: async () => ({ id: "proj", name: "queerglobal" }) };
     }
