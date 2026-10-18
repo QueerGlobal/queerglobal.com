@@ -111,25 +111,37 @@ export function createErrorReporter(options = {}) {
       await Sentry.flush(3000);
     });
 
+  const component = options.component ?? "cli";
+
   return {
     async report(err) {
+      const message = scrubSecrets(errorMessage(err));
       if (!dsn) {
-        return;
-      }
-      const component = options.component ?? "cli";
-      try {
-        const message = scrubSecrets(errorMessage(err));
         logStructured({
           event: "sentry_report",
           component,
           ok: false,
           message,
+          reported: false,
+          reason: "SENTRY_DSN unset",
+        });
+        return;
+      }
+      try {
+        logStructured({
+          event: "sentry_report",
+          component,
+          ok: false,
+          message,
+          reported: true,
         });
         await capture(err instanceof Error ? new Error(message) : new Error(message));
         logStructured({
           event: "sentry_report",
           component,
           ok: true,
+          message,
+          reported: true,
           flushed: true,
         });
       } catch (reportErr) {
@@ -138,6 +150,7 @@ export function createErrorReporter(options = {}) {
           component,
           ok: false,
           message: scrubSecrets(errorMessage(reportErr)),
+          reported: false,
           captureFailed: true,
         });
         // Reporting must never mask the original failure or hang the CLI.

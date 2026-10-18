@@ -29,6 +29,44 @@ describe("sentry-report", () => {
       .filter((l) => l.startsWith("{"))
       .map((l) => JSON.parse(l));
     assert.ok(parsed.some((p) => p.event === "sentry_report" && p.component === "test-component"));
+    assert.ok(parsed.some((p) => p.reported === true && p.ok === true));
+  });
+
+  it("logs a structured line with reported false when SENTRY_DSN is unset", async () => {
+    const lines = [];
+    const orig = process.stderr.write;
+    process.stderr.write = (chunk) => {
+      lines.push(String(chunk));
+      return true;
+    };
+    const saved = process.env.SENTRY_DSN;
+    delete process.env.SENTRY_DSN;
+    try {
+      const reporter = createErrorReporter({ dsn: "", component: "no-dsn" });
+      await reporter.report(new Error("offline failure"));
+    } finally {
+      process.stderr.write = orig;
+      if (saved !== undefined) {
+        process.env.SENTRY_DSN = saved;
+      } else {
+        delete process.env.SENTRY_DSN;
+      }
+    }
+    const parsed = lines
+      .join("")
+      .trim()
+      .split("\n")
+      .filter((l) => l.startsWith("{"))
+      .map((l) => JSON.parse(l));
+    assert.equal(parsed.length, 1);
+    assert.deepEqual(parsed[0], {
+      event: "sentry_report",
+      component: "no-dsn",
+      ok: false,
+      message: "offline failure",
+      reported: false,
+      reason: "SENTRY_DSN unset",
+    });
   });
 
   it("finishes promptly when the Sentry host refuses connections", () => {
