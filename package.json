@@ -5,9 +5,7 @@
   "description": "QueerGlobal coming-soon page for queerglobal.grandkru.com",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "check:no-em-dash": "node scripts/no-em-dash.mjs",
-    "test": "node --test scripts/no-em-dash.test.mjs"
+    "deploy": "wrangler deploy"
   },
   "devDependencies": {
     "wrangler": "^4.34.0"

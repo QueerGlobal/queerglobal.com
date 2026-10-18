@@ -26,7 +26,7 @@ npm run dev
 Then open the printed `localhost` URL. You should see the coming-soon page
 with the mission, `info@queerglobal.com`, Project docs, and the app repo.
 
-## Deploy (Mark, Grand Kru Cloudflare)
+## Deploy (Mark — Grand Kru Cloudflare)
 
 No Cloudflare token is in this agent environment, so the custom domain is
 not attached yet. Account `120d0baf442854f3f9b21e237688ae98` already hosts
@@ -42,7 +42,7 @@ other `*.grandkru.com` Workers (`activism`, `nodatacenter`, …).
    Wrangler will publish Worker `queerglobal-grandkru` and, because
    `custom_domain = true`, create the DNS record + certificate for
    `queerglobal.grandkru.com` on the `grandkru.com` zone. Do not add a
-   CNAME first: an existing CNAME blocks Custom Domains.
+   CNAME first — an existing CNAME blocks Custom Domains.
 
 2. Confirm the workers.dev preview from wrangler output (other Workers on
    this account use `*.mark-120.workers.dev`, so expect something like
