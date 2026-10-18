@@ -3,7 +3,7 @@
 Creates resources that must exist before merge to `main`:
 
 - GitHub **production** environment with required reviewers (main branch only)
-- GitHub environment secret **DOPPLER_TOKEN**
+- GitHub environment secret **DOPPLER_TOKEN** (Doppler service token created by bootstrap)
 - Cloudflare **R2 bucket** and scoped **R2 API token** (state backend only)
 - Cloudflare **deploy API token** (Workers on the account; routes/DNS on `grandkru.com` only)
 - Doppler production secrets (`CLOUDFLARE_*`, `TF_STATE_*`, `AWS_*`)
@@ -13,7 +13,7 @@ not use the R2 bucket it creates for its own state.
 
 ## State encryption and passphrase
 
-OpenTofu 1.8+ encrypts bootstrap state and plan files with PBKDF2 + AES-GCM. Provide a
+OpenTofu 1.13+ encrypts bootstrap state and plan files with PBKDF2 + AES-GCM. Provide a
 passphrase via environment variable (never commit it):
 
 ```bash
@@ -33,8 +33,7 @@ token that can write the production config:
 export CLOUDFLARE_API_TOKEN="..."   # admin token for bootstrap apply only
 export TF_VAR_cloudflare_account_id="..."
 export TF_VAR_github_token="..."
-export TF_VAR_production_reviewer_user_ids='[1234567]'
-export TF_VAR_doppler_token="..."              # service token -> GitHub DOPPLER_TOKEN
+export TF_VAR_production_reviewer_usernames='["your-github-username"]'
 export TF_VAR_doppler_management_token="..." # Doppler provider (writes secrets)
 export TF_VAR_doppler_project="your-project"
 export TF_VAR_doppler_config="prd"
@@ -45,7 +44,8 @@ tofu -chdir=infra/bootstrap apply
 ```
 
 No manual copying of outputs is required; secrets are written to Doppler via the
-provider. Only `DOPPLER_TOKEN` is stored in GitHub.
+provider. Bootstrap also creates the Doppler service token wired to GitHub
+`DOPPLER_TOKEN`.
 
 ## If bootstrap state or tokens leak
 
@@ -54,5 +54,5 @@ provider. Only `DOPPLER_TOKEN` is stored in GitHub.
 2. In Cloudflare, revoke `queerglobal-grandkru-tfstate-r2` and `queerglobal-grandkru-deploy`
    (or the names you set), then run `tofu -chdir=infra/bootstrap apply` to mint replacements
    and update Doppler via the provider.
-3. Rotate the Doppler production service token and update GitHub `DOPPLER_TOKEN` (bootstrap
-   apply or GitHub environment secret UI).
+3. Re-run bootstrap apply to rotate the Doppler service token and refresh GitHub
+   `DOPPLER_TOKEN`.

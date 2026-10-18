@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.8.0"
+  required_version = ">= 1.13.1"
 
   # Local state only (terraform.tfstate in this directory). Do not store bootstrap
   # state in the R2 bucket this stack creates.

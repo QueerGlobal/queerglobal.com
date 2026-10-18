@@ -45,20 +45,17 @@ Optional OpenTofu variables (defaults in `variables.tf`):
 State is stored remotely so GitHub Actions and anyone running deploys use the
 same state file.
 
-**Doppler (production config)** should define:
+Bootstrap writes these into the Doppler production config:
 
-1. `TF_STATE_BUCKET`: R2 bucket name (from bootstrap output).
-2. `TF_STATE_KEY`: object key (default in CI:
-   `queerglobal-grandkru/terraform.tfstate`).
-3. `TF_STATE_REGION`: use `auto` for R2.
+1. `TF_STATE_BUCKET`: R2 bucket name.
+2. `TF_STATE_KEY`: object key (default `queerglobal-grandkru/terraform.tfstate`).
+3. `TF_STATE_REGION`: `auto` for R2.
 4. `TF_STATE_ENDPOINT`:
    `https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com`
-5. `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`: scoped R2 token from
-   bootstrap (not account-wide R2 write).
+5. `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`: scoped R2 token (not account-wide R2 write).
 
-The GitHub deploy workflow exports `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-from Doppler and writes `endpoint` plus R2 skip flags into `/tmp/backend.hcl`
-when `TF_STATE_ENDPOINT` is set. See `backend.hcl.example`.
+The GitHub deploy workflow loads them from Doppler and writes `backend.hcl` for OpenTofu init.
+See `backend.hcl.example`.
 
 Local init with the same backend:
 

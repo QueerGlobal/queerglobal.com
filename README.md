@@ -54,7 +54,7 @@ the same defaults (`queerglobal-grandkru/terraform.tfstate`, `auto`).
 
 Run [infra/bootstrap](infra/bootstrap/README.md) once before the first merge so
 the protected **production** environment, `DOPPLER_TOKEN`, R2 bucket, scoped R2
-token, and Workers-only deploy token exist in Doppler.
+token, and deploy API token (Workers plus zone DNS/routes) exist in Doppler.
 
 The Cloudflare account ID and workers.dev subdomain name are intentionally
 omitted from committed files. They may still appear in older git history.
@@ -83,7 +83,7 @@ existed).
 Each successful deploy pushes a Git tag `release/<run>-<sha>`. To redeploy a
 previous release, run **Deploy production** via **Run workflow**, set
 `rollback_release_tag` to the earlier tag (for example
-`release/42-abc1234`), and approve the production environment.
+`release/42-0123456789abcdef0123456789abcdef01234567`), and approve the production environment.
 
 Manual Worker version rollback (without checking out a tag) uses the
 `rollback_version_id` workflow input with a Cloudflare Workers version UUID.
@@ -126,9 +126,8 @@ EOF
 
 Production deploys store state in a single remote bucket so GitHub Actions and
 anyone running deploys use the same state file. The bootstrap stack creates the
-bucket and a scoped R2 API token; copy those outputs into Doppler (`TF_STATE_*`,
-`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`). The deploy workflow passes them
-to OpenTofu init.
+bucket and scoped R2 credentials and writes `TF_STATE_*` and `AWS_*` into Doppler.
+The deploy workflow reads them from Doppler for OpenTofu init.
 
 Besides bootstrap, Doppler secrets, and GitHub environment approval, no other
 manual infrastructure steps are required. See [infra/README.md](infra/README.md).

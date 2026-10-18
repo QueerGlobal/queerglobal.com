@@ -39,6 +39,14 @@ export function environmentUsesCustomBranchPolicies(payload) {
 }
 
 /**
+ * @param {{ can_admins_bypass?: boolean }} payload
+ * @returns {boolean}
+ */
+export function environmentAllowsAdminBypass(payload) {
+  return payload.can_admins_bypass === true;
+}
+
+/**
  * @param {{
  *   total_count?: number,
  *   branch_policies?: Array<{ name?: string, type?: string }>,
@@ -129,6 +137,12 @@ export async function verifyProductionEnvironmentProtected(options = {}) {
   if (!response.ok) {
     const message = payload.message ?? response.statusText;
     throw new Error(`Failed to load GitHub environment ${environment}: ${message}`);
+  }
+
+  if (environmentAllowsAdminBypass(payload)) {
+    throw new Error(
+      `GitHub environment "${environment}" allows repository admins to bypass protection; refusing to deploy.`,
+    );
   }
 
   const reviewers = countRequiredReviewersFromProtectionRules(payload);

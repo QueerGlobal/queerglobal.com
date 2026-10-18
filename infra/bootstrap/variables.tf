@@ -27,15 +27,9 @@ variable "production_environment_name" {
   default     = "production"
 }
 
-variable "production_reviewer_user_ids" {
-  type        = list(number)
-  description = "GitHub user IDs allowed to approve production deployments."
-}
-
-variable "doppler_token" {
-  type        = string
-  description = "Doppler service token for the production config (stored in GitHub environment secret DOPPLER_TOKEN)."
-  sensitive   = true
+variable "production_reviewer_usernames" {
+  type        = list(string)
+  description = "GitHub usernames allowed to approve production deployments."
 }
 
 variable "doppler_management_token" {
@@ -57,7 +51,7 @@ variable "doppler_config" {
 
 variable "deploy_api_token_name" {
   type        = string
-  description = "Cloudflare API token name for deploys (Workers only, no R2)."
+  description = "Cloudflare API token name for deploys (Workers on the account; routes/DNS on the zone)."
   default     = "queerglobal-grandkru-deploy"
 }
 
@@ -87,6 +81,6 @@ variable "tf_state_bucket_name" {
 
 variable "r2_api_token_name" {
   type        = string
-  description = "Display name for the scoped R2 API token written to Doppler manually from bootstrap output."
+  description = "Display name for the scoped R2 API token (also written to Doppler by bootstrap)."
   default     = "queerglobal-grandkru-tfstate-r2"
 }

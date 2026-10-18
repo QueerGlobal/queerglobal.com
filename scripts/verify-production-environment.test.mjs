@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   countRequiredReviewersFromProtectionRules,
   deploymentBranchPoliciesAllowMainOnly,
+  environmentAllowsAdminBypass,
   environmentUsesCustomBranchPolicies,
   verifyProductionEnvironmentProtected,
 } from "./verify-production-environment.mjs";
@@ -11,6 +12,7 @@ import {
 const githubProductionEnvironment = {
   id: 12345678,
   name: "production",
+  can_admins_bypass: false,
   protection_rules: [
     {
       id: 990,
@@ -48,6 +50,13 @@ describe("environmentUsesCustomBranchPolicies", () => {
   });
 });
 
+describe("environmentAllowsAdminBypass", () => {
+  it("detects when admins can bypass environment protection", () => {
+    assert.equal(environmentAllowsAdminBypass({ can_admins_bypass: true }), true);
+    assert.equal(environmentAllowsAdminBypass({ can_admins_bypass: false }), false);
+  });
+});
+
 describe("deploymentBranchPoliciesAllowMainOnly", () => {
   it("accepts a single branch policy named main", () => {
     assert.equal(deploymentBranchPoliciesAllowMainOnly(githubDeploymentBranchPolicies), true);
@@ -76,6 +85,31 @@ describe("verifyProductionEnvironmentProtected", () => {
     });
     assert.equal(result.reviewers, 1);
     assert.equal(result.mainOnlyDeploy, true);
+  });
+
+  it("throws when repository admins can bypass the environment", async () => {
+    const fetchImpl = async (url) => {
+      if (String(url).includes("deployment-branch-policies")) {
+        return {
+          ok: true,
+          json: async () => githubDeploymentBranchPolicies,
+        };
+      }
+      return {
+        ok: true,
+        json: async () => ({ ...githubProductionEnvironment, can_admins_bypass: true }),
+      };
+    };
+    await assert.rejects(
+      () =>
+        verifyProductionEnvironmentProtected({
+          owner: "QueerGlobal",
+          repo: "queerglobal.com",
+          token: "token",
+          fetchImpl,
+        }),
+      /admins to bypass protection/,
+    );
   });
 
   it("throws when deployment branch policies are not main-only", async () => {

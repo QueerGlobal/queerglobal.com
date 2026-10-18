@@ -91,12 +91,26 @@ resource "cloudflare_account_token" "deploy_workers" {
   ]
 }
 
+data "github_user" "production_reviewer" {
+  for_each = toset(var.production_reviewer_usernames)
+  username = each.value
+}
+
+locals {
+  production_reviewer_user_ids = [
+    for username in var.production_reviewer_usernames :
+    tonumber(data.github_user.production_reviewer[username].id)
+  ]
+}
+
 resource "github_repository_environment" "production" {
   repository  = var.github_repository
   environment = var.production_environment_name
 
+  can_admins_bypass = false
+
   reviewers {
-    users = var.production_reviewer_user_ids
+    users = local.production_reviewer_user_ids
   }
 
   deployment_branch_policy {
@@ -111,9 +125,16 @@ resource "github_repository_environment_deployment_policy" "production_main" {
   branch_pattern = "main"
 }
 
+resource "doppler_service_token" "github_actions_production" {
+  project = var.doppler_project
+  config  = var.doppler_config
+  name    = "github-actions-${var.production_environment_name}"
+  access  = "read"
+}
+
 resource "github_actions_environment_secret" "doppler_token" {
   repository      = var.github_repository
   environment     = github_repository_environment.production.environment
   secret_name     = "DOPPLER_TOKEN"
-  plaintext_value = var.doppler_token
+  plaintext_value = doppler_service_token.github_actions_production.key
 }

@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.6.0"
+  required_version = ">= 1.13.1"
 
   backend "s3" {
     # Configure at init time (see infra/README.md). Example:

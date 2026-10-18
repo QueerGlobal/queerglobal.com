@@ -7,9 +7,20 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { EXPECTED_COMING_SOON_TITLE, EXPECTED_HTTP_STATUS } from "./check-production-site.mjs";
+import { EXPECTED_COMING_SOON_TITLE } from "./check-production-site.mjs";
 
 export const DEFAULT_ACTIVISM_URL = "https://activism.grandkru.com";
+
+/** activism.grandkru.com may return 401 when Basic Auth is enabled. */
+export const ALLOWED_ACTIVISM_HTTP_STATUSES = [200, 401];
+
+/**
+ * @param {number} status
+ * @returns {boolean}
+ */
+export function isAllowedActivismHttpStatus(status) {
+  return ALLOWED_ACTIVISM_HTTP_STATUSES.includes(status);
+}
 
 /**
  * @param {string} html
@@ -25,14 +36,12 @@ export function activismHtmlLooksUnchanged(html, forbiddenTitle = EXPECTED_COMIN
  * @param {{
  *   fetchImpl?: typeof fetch,
  *   forbiddenTitle?: string,
- *   expectedStatus?: number,
  * }} [options]
  * @returns {Promise<{ ok: true } | { ok: false, error: string, status: number | null }>}
  */
 export async function checkActivismUnchanged(url = DEFAULT_ACTIVISM_URL, options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const forbiddenTitle = options.forbiddenTitle ?? EXPECTED_COMING_SOON_TITLE;
-  const expectedStatus = options.expectedStatus ?? EXPECTED_HTTP_STATUS;
 
   try {
     const response = await fetchImpl(url, {
@@ -41,11 +50,11 @@ export async function checkActivismUnchanged(url = DEFAULT_ACTIVISM_URL, options
     });
     const body = await response.text();
 
-    if (response.status !== expectedStatus) {
+    if (!isAllowedActivismHttpStatus(response.status)) {
       return {
         ok: false,
         status: response.status,
-        error: `Expected HTTP ${expectedStatus}, got ${response.status}.`,
+        error: `Expected HTTP ${ALLOWED_ACTIVISM_HTTP_STATUSES.join(" or ")}, got ${response.status}.`,
       };
     }
 
