@@ -11,7 +11,10 @@ this Grand Kru subdomain first. It is not `activism.grandkru.com/queerglobal`.
 Do not change `queerglobal.com` DNS.
 
 The page is served from `public/`. The previous Adobe XD export lives in
-`archive/xd-export/` and is not served.
+`archive/xd-export/` and is not served. The old `main` root layout from commit
+`5c6343c` (prepared for AWS publishing) is retired into `archive/xd-export/`; root
+`index.html` and `revisions/index.html` swap places there. `queerglobal.com` does
+not currently resolve, so no live site is affected by this repository.
 
 The intended product app is [qg-frontend-v2](https://github.com/QueerGlobal/qg-frontend-v2).
 Contributor docs are in [qg-docs](https://github.com/QueerGlobal/qg-docs).

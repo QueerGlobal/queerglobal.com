@@ -1,0 +1,10 @@
+# Non-secret backend settings for bootstrap state in R2. Copy to a temp file (umask 077).
+# AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY come from the environment only.
+
+bucket = "YOUR_TF_STATE_BUCKET"
+key    = "queerglobal-grandkru/bootstrap.tfstate"
+region = "auto"
+endpoint = "https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com"
+skip_credentials_validation = true
+skip_metadata_api_check = true
+skip_region_validation = true

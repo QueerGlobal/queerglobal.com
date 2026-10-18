@@ -1,26 +1,39 @@
 terraform {
   required_version = ">= 1.13.1"
 
-  # Local state only (terraform.tfstate in this directory). Do not store bootstrap
-  # state in the R2 bucket this stack creates.
+  backend "s3" {
+    # Configure at init (see infra/bootstrap/README.md and scripts/bootstrap-tofu-init.sh).
+  }
 
   encryption {
     key_provider "pbkdf2" "bootstrap" {
       passphrase = var.bootstrap_state_passphrase
     }
 
+    key_provider "pbkdf2" "bootstrap_previous" {
+      passphrase = var.bootstrap_state_passphrase_previous != "" ? var.bootstrap_state_passphrase_previous : var.bootstrap_state_passphrase
+    }
+
     method "aes_gcm" "bootstrap" {
       keys = key_provider.pbkdf2.bootstrap
     }
 
+    method "aes_gcm" "bootstrap_previous" {
+      keys = key_provider.pbkdf2.bootstrap_previous
+    }
+
     state {
-      method   = method.aes_gcm.bootstrap
-      enforced = true
+      method = method.aes_gcm.bootstrap
+      fallback {
+        method = method.aes_gcm.bootstrap_previous
+      }
     }
 
     plan {
-      method   = method.aes_gcm.bootstrap
-      enforced = true
+      method = method.aes_gcm.bootstrap
+      fallback {
+        method = method.aes_gcm.bootstrap_previous
+      }
     }
   }
 

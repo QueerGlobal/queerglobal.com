@@ -105,22 +105,7 @@ Only when CI is unavailable and you have approval:
 
 ```bash
 doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
-  bash -ec '
-    export TF_VAR_cloudflare_account_id="$CLOUDFLARE_ACCOUNT_ID"
-    export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
-    cat > /tmp/backend.hcl <<EOF
-bucket = "$TF_STATE_BUCKET"
-key    = "${TF_STATE_KEY:-queerglobal-grandkru/terraform.tfstate}"
-region = "${TF_STATE_REGION:-auto}"
-endpoint = "$TF_STATE_ENDPOINT"
-skip_credentials_validation = true
-skip_metadata_api_check = true
-skip_region_validation = true
-EOF
-    tofu -chdir=infra init -backend-config=/tmp/backend.hcl
-    tofu -chdir=infra plan -out=/tmp/tfplan
-    tofu -chdir=infra apply /tmp/tfplan
-  '
+  bash scripts/run-infra-tofu-apply.sh
 ```
 
 Do not attach `queerglobal.com` from this stack.

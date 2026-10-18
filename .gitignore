@@ -6,3 +6,5 @@ infra/bootstrap/.terraform/
 infra/bootstrap/terraform.tfstate
 infra/bootstrap/terraform.tfstate.backup
 infra/backend.hcl
+*.tfplan
+tfplan

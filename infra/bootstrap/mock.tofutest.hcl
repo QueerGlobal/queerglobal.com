@@ -245,3 +245,99 @@ run "reject_short_passphrase" {
     var.bootstrap_state_passphrase,
   ]
 }
+
+run "reject_empty_reviewers" {
+  command = plan
+  plan_options { refresh = false }
+  variables {
+    cloudflare_account_id         = "00000000000000000000000000000001"
+    github_token                  = "ghp_mock_bootstrap_token_000000000000"
+    doppler_management_token      = "dp.st.mock_management_token_000000000000"
+    doppler_project               = "queerglobal"
+    doppler_config                = "prd"
+    doppler_bootstrap_config      = "bootstrap"
+    production_reviewer_usernames = []
+    bootstrap_state_passphrase    = "mock-bootstrap-passphrase"
+  }
+  expect_failures = [var.production_reviewer_usernames]
+}
+
+run "reject_blank_reviewer_username" {
+  command = plan
+  plan_options { refresh = false }
+  variables {
+    cloudflare_account_id         = "00000000000000000000000000000001"
+    github_token                  = "ghp_mock_bootstrap_token_000000000000"
+    doppler_management_token      = "dp.st.mock_management_token_000000000000"
+    doppler_project               = "queerglobal"
+    doppler_config                = "prd"
+    doppler_bootstrap_config      = "bootstrap"
+    production_reviewer_usernames = [""]
+    bootstrap_state_passphrase    = "mock-bootstrap-passphrase"
+  }
+  expect_failures = [var.production_reviewer_usernames]
+}
+
+run "reject_invalid_account_id" {
+  command = plan
+  plan_options { refresh = false }
+  variables {
+    cloudflare_account_id         = "not-a-valid-account-id"
+    github_token                  = "ghp_mock_bootstrap_token_000000000000"
+    doppler_management_token      = "dp.st.mock_management_token_000000000000"
+    doppler_project               = "queerglobal"
+    doppler_config                = "prd"
+    doppler_bootstrap_config      = "bootstrap"
+    production_reviewer_usernames = ["octocat"]
+    bootstrap_state_passphrase    = "mock-bootstrap-passphrase"
+  }
+  expect_failures = [var.cloudflare_account_id]
+}
+
+run "reject_empty_github_token" {
+  command = plan
+  plan_options { refresh = false }
+  variables {
+    cloudflare_account_id         = "00000000000000000000000000000001"
+    github_token                  = ""
+    doppler_management_token      = "dp.st.mock_management_token_000000000000"
+    doppler_project               = "queerglobal"
+    doppler_config                = "prd"
+    doppler_bootstrap_config      = "bootstrap"
+    production_reviewer_usernames = ["octocat"]
+    bootstrap_state_passphrase    = "mock-bootstrap-passphrase"
+  }
+  expect_failures = [var.github_token]
+}
+
+run "reject_empty_doppler_management_token" {
+  command = plan
+  plan_options { refresh = false }
+  variables {
+    cloudflare_account_id         = "00000000000000000000000000000001"
+    github_token                  = "ghp_mock_bootstrap_token_000000000000"
+    doppler_management_token      = ""
+    doppler_project               = "queerglobal"
+    doppler_config                = "prd"
+    doppler_bootstrap_config      = "bootstrap"
+    production_reviewer_usernames = ["octocat"]
+    bootstrap_state_passphrase    = "mock-bootstrap-passphrase"
+  }
+  expect_failures = [var.doppler_management_token]
+}
+
+run "reject_empty_doppler_project" {
+  command = plan
+  plan_options { refresh = false }
+  variables {
+    cloudflare_account_id         = "00000000000000000000000000000001"
+    github_token                  = "ghp_mock_bootstrap_token_000000000000"
+    doppler_management_token      = "dp.st.mock_management_token_000000000000"
+    doppler_project               = ""
+    doppler_config                = "prd"
+    doppler_bootstrap_config      = "bootstrap"
+    production_reviewer_usernames = ["octocat"]
+    bootstrap_state_passphrase    = "mock-bootstrap-passphrase"
+  }
+  expect_failures = [var.doppler_project]
+}
