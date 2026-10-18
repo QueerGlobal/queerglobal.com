@@ -6,7 +6,7 @@ dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # Always the bootstrap stack next to this script. There is no override: a
 # redirected directory would apply a different root module with real credentials
 # and back its state up over the real bootstrap state in Doppler.
-bootstrap_dir="${BOOTSTRAP_APPLY_DIR:-$dir/infra/bootstrap}"
+bootstrap_dir="$dir/infra/bootstrap"
 apply_started=0
 # Keep any EXIT trap the caller already set and run it after ours. `trap -p` prints
 # `trap -- '<command>' EXIT` with shell quoting, so let the shell unquote it.
