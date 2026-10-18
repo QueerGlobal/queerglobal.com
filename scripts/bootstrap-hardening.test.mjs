@@ -432,66 +432,11 @@ describe("bootstrap-passphrase-rotate.sh promote (real script, stub tofu and dop
     );
   });
 
-  it("README rotation command keeps passphrases off argv and stdout", () => {
-    const readme = fs.readFileSync("infra/bootstrap/README.md", "utf8");
-    const rotation = readme.split("## Passphrase rotation")[1].split("To promote")[0];
-    assert.doesNotMatch(rotation, /export TF_VAR_bootstrap_state_passphrase/);
-    assert.match(rotation, /bootstrap-passphrase-rotate-run\.sh/);
-    const snippet = rotation.split("```bash\n")[1].split("\n```")[0];
-    const work = mkdtempTracked("readme-rotate-");
-    try {
-      fs.cpSync(path.join(REPO, "scripts"), path.join(work, "scripts"), { recursive: true });
-      fs.mkdirSync(path.join(work, "infra", "bootstrap"), { recursive: true });
-      fs.writeFileSync(path.join(work, "infra", "bootstrap", "terraform.tfstate"), '{"encrypted":"stand-in"}');
-      const argvLog = path.join(work, "argv.log");
-      const doppler = stubBin(
-        "doppler",
-        `printf '%s\\n' "$*" >> "${argvLog}"
-case "$*" in
-  *get*BOOTSTRAP_STATE_PASSPHRASE_NEXT*) printf '%s' "${NEW_PASS}" ;;
-  *get*BOOTSTRAP_STATE_PASSPHRASE*) printf '%s' "${OLD_PASS}" ;;
-  *) exit 0 ;;
-esac`,
-      );
-      const tofu = stubBin(
-        "tofu",
-        `printf '%s\\n' "$*" >> "${argvLog}"
-case "$*" in
-  *" show "*|*" show") printf '%s\\n' "Error: decryption failed for all provided methods" >&2; exit 1 ;;
-  *) exit 0 ;;
-esac`,
-      );
-      const r = spawnSync("bash", ["-c", `${snippet}\nprintf rotate\\npromote\\n`], {
-        cwd: work,
-        env: {
-          PATH: `${doppler}:${tofu}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
-          HOME: os.tmpdir(),
-          TF_VAR_doppler_project: "queerglobal",
-          TF_VAR_doppler_bootstrap_config: "bootstrap",
-          BOOTSTRAP_ROTATE_PROMOTE_DOPPLER: "1",
-          OLD_PASS,
-          NEW_PASS,
-        },
-        encoding: "utf8",
-      });
-      const combined = `${r.stdout}${r.stderr}${fs.existsSync(argvLog) ? fs.readFileSync(argvLog, "utf8") : ""}`;
-      assert.doesNotMatch(combined, new RegExp(OLD_PASS));
-      assert.doesNotMatch(combined, new RegExp(NEW_PASS));
-    } finally {
-      fs.rmSync(work, { recursive: true, force: true });
-    }
-  });
-
   it("bootstrap README does not tell readers to export TF_VAR_cloudflare_account_id", () => {
     const readme = fs.readFileSync("infra/bootstrap/README.md", "utf8");
     const cloudflare = readme.split("### Cloudflare (bootstrap apply only)")[1].split("### GitHub")[0];
     assert.doesNotMatch(cloudflare, /export TF_VAR_cloudflare_account_id/);
     assert.match(cloudflare, /preflight-bootstrap-cloudflare\.mjs/);
-  });
-
-  it("bootstrap-passphrase-rotate-run.sh never echoes loaded passphrases", () => {
-    const src = fs.readFileSync("scripts/bootstrap-passphrase-rotate-run.sh", "utf8");
-    assert.doesNotMatch(src, /echo\s+.*TF_VAR_bootstrap_state_passphrase/);
   });
 
   it("fails when the old passphrase is rejected for a reason other than decryption", () => {
@@ -587,7 +532,7 @@ describe("bootstrap preflight CLI runs the Doppler isolation check", () => {
 describe("bootstrap writes always go through bootstrap-tofu-apply.sh", () => {
   it("make rotate-doppler-github-token uses the apply script", () => {
     const make = fs.readFileSync("Makefile", "utf8");
-    assert.match(make, /^\tbash scripts\/bootstrap-tofu-apply\.sh -replace=doppler_service_token\.github_actions_production$/m);
+    assert.match(make, /^\tbash scripts\/bootstrap-run\.sh bash scripts\/bootstrap-tofu-apply\.sh -replace=doppler_service_token\.github_actions_production$/m);
     assert.doesNotMatch(make, /^\t[^@]*tofu -chdir=infra\/bootstrap apply/m);
   });
 

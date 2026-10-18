@@ -59,32 +59,7 @@ Bootstrap writes these into the Doppler production config:
 The GitHub deploy workflow loads them from Doppler and writes `backend.hcl` for OpenTofu init.
 See `backend.hcl.example`.
 
-Local init with the same backend:
-
-```bash
-export AWS_ACCESS_KEY_ID="..."
-export AWS_SECRET_ACCESS_KEY="..."
-export TF_STATE_BUCKET="..."
-export TF_STATE_KEY="queerglobal-grandkru/terraform.tfstate"
-export TF_STATE_REGION="auto"
-export TF_STATE_ENDPOINT="https://YOUR_ACCOUNT_ID.r2.cloudflarestorage.com"
-
-cat > backend.hcl <<EOF
-bucket = "$TF_STATE_BUCKET"
-key    = "$TF_STATE_KEY"
-region = "$TF_STATE_REGION"
-endpoint = "$TF_STATE_ENDPOINT"
-skip_credentials_validation = true
-skip_metadata_api_check = true
-skip_region_validation = true
-EOF
-
-export CLOUDFLARE_API_TOKEN="..."
-eval "$(node scripts/bootstrap-export-committed-env.mjs)"
-
-tofu -chdir=infra init -backend-config=backend.hcl
-tofu -chdir=infra plan
-```
+Production state is only read or written by the gated deploy workflow, which loads these values from Doppler inside its own steps. There is no local command that uses production credentials, and none of these values are typed or exported by hand.
 
 Local validation without remote state:
 
@@ -94,9 +69,8 @@ tofu -chdir=infra validate
 tofu -chdir=infra/bootstrap init -backend=false
 tofu -chdir=infra/bootstrap validate
 tofu fmt -check -recursive infra/
-export TF_VAR_bootstrap_state_passphrase='mock-bootstrap-passphrase-for-ci'
 tofu -chdir=infra test
-tofu -chdir=infra/bootstrap test
+TF_VAR_bootstrap_state_passphrase=mock-bootstrap-passphrase-for-ci tofu -chdir=infra/bootstrap test
 ```
 
 ## Production apply (CI)

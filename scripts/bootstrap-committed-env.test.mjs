@@ -101,4 +101,29 @@ describe("bootstrap-committed-env.sh", () => {
       rmTracked(work);
     }
   });
+
+  it("bootstrap-export-committed-env.mjs output is safe to eval: quotes, $() and backticks stay literal", () => {
+    const work = mkdtempTracked("committed-env-eval-");
+    try {
+      fs.cpSync("scripts", path.join(work, "scripts"), { recursive: true });
+      fs.mkdirSync(path.join(work, "infra", "bootstrap"), { recursive: true });
+      const hostile = "q'g$(touch pwned-a)`touch pwned-b`\"; touch pwned-c; '";
+      fs.writeFileSync(
+        path.join(work, "infra/bootstrap/bootstrap-project.auto.tfvars.json"),
+        JSON.stringify({ doppler_project: hostile, doppler_config: "prd", doppler_bootstrap_config: "bootstrap" }),
+      );
+      const r = spawnSync(
+        "bash",
+        ["-c", 'set -euo pipefail; eval "$(node scripts/bootstrap-export-committed-env.mjs --slugs-only)"; printf "%s" "$TF_VAR_doppler_project"'],
+        { cwd: work, env: { PATH: `${path.dirname(process.execPath)}:/usr/bin:/bin`, TMPDIR: work }, encoding: "utf8" },
+      );
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(r.stdout, hostile);
+      for (const marker of ["pwned-a", "pwned-b", "pwned-c"]) {
+        assert.equal(fs.existsSync(path.join(work, marker)), false, `${marker} was executed by eval`);
+      }
+    } finally {
+      rmTracked(work);
+    }
+  });
 });

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Re-encrypt bootstrap state with a new passphrase (TF_ENCRYPTION two-hop rotation).
+# Tracing stays off: this script holds both passphrases.
+{ set +x; } 2>/dev/null
 set -euo pipefail
 
 # shellcheck source=scripts/bootstrap-committed-env.sh
