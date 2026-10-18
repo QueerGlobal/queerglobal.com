@@ -36,16 +36,28 @@ fi
 
 umask 077
 pass_file="$(mktemp)"
-
-if doppler secrets get BOOTSTRAP_STATE_PASSPHRASE --plain -p "$project" -c "$config" >"$pass_file" 2>/dev/null; then
+get_err="$(mktemp)"
+get_code=0
+if doppler secrets get BOOTSTRAP_STATE_PASSPHRASE --plain -p "$project" -c "$config" >"$pass_file" 2>"$get_err"; then
   :
-elif [ "$first_run" = "1" ]; then
+else
+  get_code=$?
+fi
+if [ -s "$pass_file" ]; then
+  :
+elif [ "$first_run" = "1" ] && node "$dir/scripts/lib/doppler-secret-missing.mjs" "$get_err" "$get_code"; then
   node "$dir/scripts/bootstrap-generate-passphrase.mjs" | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE -p "$project" -c "$config"
   doppler secrets get BOOTSTRAP_STATE_PASSPHRASE --plain -p "$project" -c "$config" >"$pass_file"
+elif [ "$first_run" = "1" ]; then
+  cat "$get_err" >&2
+  echo "Refusing to generate BOOTSTRAP_STATE_PASSPHRASE: Doppler get failed for a reason other than a missing secret." >&2
+  exit 1
 else
+  cat "$get_err" >&2
   echo "BOOTSTRAP_STATE_PASSPHRASE is missing in Doppler ($project/$config); set BOOTSTRAP_FIRST_RUN=1 for a new bootstrap." >&2
   exit 1
 fi
+rm -f "$get_err"
 
 if [ ! -s "$pass_file" ]; then
   echo "Bootstrap state passphrase in Doppler is empty." >&2

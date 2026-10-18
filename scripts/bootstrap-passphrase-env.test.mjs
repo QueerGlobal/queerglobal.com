@@ -18,7 +18,7 @@ describe("bootstrap-passphrase-env.sh", () => {
     const doppler = stubBin(
       "doppler",
       `if [[ "$*" == *secrets*get*BOOTSTRAP_STATE_PASSPHRASE* ]]; then
-  if [ -s "${passFile}" ]; then cat "${passFile}"; else exit 1; fi
+  if [ -s "${passFile}" ]; then cat "${passFile}"; else echo "Secret not found" >&2; exit 1; fi
 elif [[ "$*" == *secrets*set*BOOTSTRAP_STATE_PASSPHRASE* ]]; then
   cat > "${passFile}"
   echo set >> "${setLog}"
@@ -58,6 +58,7 @@ exit 0`,
           `#!/usr/bin/env bash
 if [[ "$*" == *secrets*get*BOOTSTRAP_STATE_PASSPHRASE* ]]; then
   if [ -s "${passFile}" ]; then cat "${passFile}"; exit 0; fi
+  echo "Secret not found" >&2
   exit 1
 elif [[ "$*" == *secrets*set*BOOTSTRAP_STATE_PASSPHRASE* ]]; then
   cat > "${passFile}"
@@ -85,6 +86,41 @@ exit 0
       assert.match(value, /^[A-Za-z0-9+/]{43}=$/, "expected 32 random bytes in base64");
     }
     assert.notEqual(stored[0], stored[1], "two first bootstraps stored the same passphrase");
+  });
+
+  it("does not overwrite the passphrase when Doppler get fails for a non-missing reason on first run", () => {
+    const work = fs.mkdtempSync(path.join(os.tmpdir(), "pass-refuse-"));
+    try {
+      const setLog = path.join(work, "set.log");
+      fs.writeFileSync(
+        path.join(work, "doppler"),
+        `#!/usr/bin/env bash
+if [[ "$*" == *secrets*get*BOOTSTRAP_STATE_PASSPHRASE* ]]; then
+  echo "Doppler Error: invalid token" >&2
+  exit 1
+elif [[ "$*" == *secrets*set*BOOTSTRAP_STATE_PASSPHRASE* ]]; then
+  echo set >> "${setLog}"
+  cat >/dev/null
+fi
+exit 0
+`,
+        { mode: 0o755 },
+      );
+      const r = spawnSync("bash", ["-c", "source scripts/bootstrap-passphrase-env.sh"], {
+        env: {
+          PATH: `${work}:${path.dirname(process.execPath)}:/usr/bin:/bin`,
+          BOOTSTRAP_FIRST_RUN: "1",
+          TF_VAR_doppler_project: "queerglobal",
+          TMPDIR: work,
+        },
+        encoding: "utf8",
+      });
+      assert.notEqual(r.status, 0);
+      assert.match(r.stderr, /Refusing to generate/);
+      assert.equal(fs.existsSync(setLog), false, "must not call doppler secrets set");
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
   });
 
   it("keeps the passphrase out of xtrace output and restores xtrace for the caller", () => {

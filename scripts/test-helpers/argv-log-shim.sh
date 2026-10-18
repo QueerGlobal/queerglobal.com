@@ -28,6 +28,7 @@ case "$name" in
       if [ -f "${ARGV_DOPPLER_PASSPHRASE_FILE:-}" ]; then
         cat "${ARGV_DOPPLER_PASSPHRASE_FILE}"
       else
+        echo "Secret not found" >&2
         exit 1
       fi
       exit 0
