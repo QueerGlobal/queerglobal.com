@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# Plan and apply the main infra stack. Requires secrets in the environment (Doppler run).
+# Apply the main infra stack from a CI plan, or break-glass with Mark's explicit approval.
 set -euo pipefail
 
 umask 077
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-tmp=$(mktemp -d)
-plan="$tmp/tfplan"
-trap 'rm -f "$plan"; rm -rf "$tmp"' EXIT
 
 on_err() {
   node "$ROOT/scripts/report-cli-failure.mjs" "run-infra-tofu-apply" "$1" 2>/dev/null || true
@@ -25,17 +22,78 @@ if [ -n "${AWS_SESSION_TOKEN:-}" ]; then
   export AWS_SESSION_TOKEN
 fi
 
-{
-  echo "bucket = \"$TF_STATE_BUCKET\""
-  echo "key = \"${TF_STATE_KEY:-queerglobal-grandkru/terraform.tfstate}\""
-  echo "region = \"${TF_STATE_REGION:-auto}\""
-  echo "endpoint = \"$TF_STATE_ENDPOINT\""
-  echo "skip_credentials_validation = true"
-  echo "skip_metadata_api_check = true"
-  echo "skip_region_validation = true"
-} >"$tmp/backend.hcl"
+apply_ci_plan() {
+  local plan_dir="${INFRA_CI_PLAN_DIR:-}"
+  local plan stamp tmp
+  if [ -z "$plan_dir" ]; then
+    echo "INFRA_CI_PLAN_DIR is required for CI apply." >&2
+    exit 1
+  fi
+  if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+    echo "CI apply requires GITHUB_ACTIONS=true." >&2
+    exit 1
+  fi
+  if [ -z "${GITHUB_RUN_ID:-}" ]; then
+    echo "GITHUB_RUN_ID is required for CI apply." >&2
+    exit 1
+  fi
+  plan="$plan_dir/tfplan"
+  stamp="$plan_dir/stamp"
+  if [ ! -f "$plan" ] || [ ! -f "$stamp" ]; then
+    echo "Missing plan or stamp under $plan_dir; run run-infra-tofu-plan.sh in this workflow first." >&2
+    exit 1
+  fi
+  if [ "$(cat "$stamp")" != "$GITHUB_RUN_ID" ]; then
+    echo "Plan stamp does not match this workflow run; refusing apply." >&2
+    exit 1
+  fi
+  tmp=$(mktemp -d)
+  {
+    echo "bucket = \"$TF_STATE_BUCKET\""
+    echo "key = \"${TF_STATE_KEY:-queerglobal-grandkru/terraform.tfstate}\""
+    echo "region = \"${TF_STATE_REGION:-auto}\""
+    echo "endpoint = \"$TF_STATE_ENDPOINT\""
+    echo "skip_credentials_validation = true"
+    echo "skip_metadata_api_check = true"
+    echo "skip_region_validation = true"
+  } >"$tmp/backend.hcl"
+  tofu -chdir="$ROOT/infra" init -backend-config="$tmp/backend.hcl" -input=false
+  if ! tofu -chdir="$ROOT/infra" apply -auto-approve -input=false "$plan"; then
+    on_err $LINENO
+    exit 1
+  fi
+  rm -rf "$tmp"
+}
 
-tofu -chdir="$ROOT/infra" init -backend-config="$tmp/backend.hcl" -input=false
-tofu -chdir="$ROOT/infra" validate -no-color
-tofu -chdir="$ROOT/infra" plan -input=false -out="$plan"
-tofu -chdir="$ROOT/infra" apply -auto-approve -input=false "$plan"
+apply_break_glass() {
+  local tmp plan
+  tmp=$(mktemp -d)
+  plan="$tmp/tfplan"
+  {
+    echo "bucket = \"$TF_STATE_BUCKET\""
+    echo "key = \"${TF_STATE_KEY:-queerglobal-grandkru/terraform.tfstate}\""
+    echo "region = \"${TF_STATE_REGION:-auto}\""
+    echo "endpoint = \"$TF_STATE_ENDPOINT\""
+    echo "skip_credentials_validation = true"
+    echo "skip_metadata_api_check = true"
+    echo "skip_region_validation = true"
+  } >"$tmp/backend.hcl"
+  tofu -chdir="$ROOT/infra" init -backend-config="$tmp/backend.hcl" -input=false
+  tofu -chdir="$ROOT/infra" validate -no-color
+  tofu -chdir="$ROOT/infra" plan -input=false -out="$plan"
+  if ! tofu -chdir="$ROOT/infra" apply -auto-approve -input=false "$plan"; then
+    on_err $LINENO
+    exit 1
+  fi
+  rm -f "$plan"
+  rm -rf "$tmp"
+}
+
+if [ -n "${INFRA_CI_PLAN_DIR:-}" ]; then
+  apply_ci_plan
+elif [ "${INFRA_BREAK_GLASS:-}" = "1" ]; then
+  apply_break_glass
+else
+  echo "Refusing to plan/apply infra outside CI. Set INFRA_CI_PLAN_DIR with a stamped plan from this run, or INFRA_BREAK_GLASS=1 for documented break-glass (Mark approves)." >&2
+  exit 1
+fi

@@ -23,15 +23,19 @@ fi
 _on_exit() {
   local code=$?
   if [ "$apply_started" = 1 ]; then
-    bash "$dir/scripts/bootstrap-state-backup.sh" "$bootstrap_dir" || true
+    if ! BOOTSTRAP_BACKUP_REQUIRE_STATE=1 bash "$dir/scripts/bootstrap-state-backup.sh" "$bootstrap_dir"; then
+      code=1
+    fi
   fi
   if [ -n "$previous_exit_trap" ]; then
     eval "$previous_exit_trap"
   fi
   exit "$code"
 }
-trap '_on_exit' EXIT
 
+# shellcheck source=scripts/bootstrap-passphrase-env.sh
+. "$dir/scripts/bootstrap-passphrase-env.sh"
+trap '_on_exit' EXIT
 node "$dir/scripts/preflight-bootstrap.mjs"
 bash "$dir/scripts/bootstrap-tofu-init.sh" "$bootstrap_dir"
 apply_started=1

@@ -19,7 +19,6 @@ import { ACCOUNT_ID, bootstrapStandInFetch } from "./fetch-stub.mjs";
 export async function runBootstrapE2ePreflight(markerPath) {
   process.env.CLOUDFLARE_API_TOKEN = "bootstrap-e2e-cf-token";
   process.env.TF_VAR_cloudflare_account_id = ACCOUNT_ID;
-  process.env.TF_VAR_production_reviewer_usernames = '["octocat"]';
   const code = await runPreflightBootstrapCli({ fetchImpl: bootstrapStandInFetch() });
   if (code === 0) {
     await fs.writeFile(markerPath, `${Date.now()}\n`, { mode: 0o600 });

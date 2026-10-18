@@ -57,6 +57,13 @@ export function scrubSecrets(text, env = process.env) {
 let initialized = false;
 
 /**
+ * @param {Record<string, unknown>} payload
+ */
+function logStructured(payload) {
+  process.stderr.write(`${JSON.stringify(payload)}\n`);
+}
+
+/**
  * @param {{ dsn?: string, component?: string }} [options]
  */
 function ensureSentry(options = {}) {
@@ -109,10 +116,30 @@ export function createErrorReporter(options = {}) {
       if (!dsn) {
         return;
       }
+      const component = options.component ?? "cli";
       try {
         const message = scrubSecrets(errorMessage(err));
+        logStructured({
+          event: "sentry_report",
+          component,
+          ok: false,
+          message,
+        });
         await capture(err instanceof Error ? new Error(message) : new Error(message));
-      } catch {
+        logStructured({
+          event: "sentry_report",
+          component,
+          ok: true,
+          flushed: true,
+        });
+      } catch (reportErr) {
+        logStructured({
+          event: "sentry_report",
+          component,
+          ok: false,
+          message: scrubSecrets(errorMessage(reportErr)),
+          captureFailed: true,
+        });
         // Reporting must never mask the original failure or hang the CLI.
       }
     },

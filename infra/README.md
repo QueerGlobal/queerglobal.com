@@ -99,22 +99,25 @@ tofu -chdir=infra test
 tofu -chdir=infra/bootstrap test
 ```
 
+## Production apply (CI)
+
+Normal deploys run **OpenTofu plan** then **apply** in GitHub Actions: `run-infra-tofu-plan.sh` writes a plan and stamps it with `GITHUB_RUN_ID`; `run-infra-tofu-apply.sh` refuses to apply unless the stamp matches the current run. The deploy job requires the **production** environment (manual approval).
+
 ## Manual apply (break-glass)
 
-Only when CI is unavailable and you have approval:
+Only when CI is unavailable and **Mark** has explicitly approved break-glass use. The script refuses to plan/apply outside CI unless you set `INFRA_BREAK_GLASS=1` (it still plans locally before apply; it does not accept an arbitrary plan file from disk). Prefer re-running the gated workflow when CI returns.
 
 ```bash
+export INFRA_BREAK_GLASS=1
 doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
   bash scripts/run-infra-tofu-apply.sh
 ```
 
 Do not attach `queerglobal.com` from this stack.
 
-## Manual Worker rollback
+## Manual Worker rollback and release redeploy
 
-In GitHub Actions, run **Deploy production** via **Run workflow**:
+In GitHub Actions, run **Deploy production** via **Run workflow** and approve the **production** environment for the rollback or redeploy job:
 
-- `rollback_version_id`: Cloudflare Workers version UUID (fast Worker rollback)
-- `rollback_release_tag`: Git tag from a prior deploy (OpenTofu redeploy)
-
-Approve the `production` environment for either job.
+- `rollback_version_id`: Cloudflare Workers version UUID (fast Worker rollback). Runs `npm test` in a dedicated job first, then rollback after approval.
+- `rollback_release_tag`: Git tag from a prior deploy (OpenTofu redeploy). Skips the push **test** job because release tags are created only after deploy smoke and recheck passed for that tag; the workflow comment documents this. Plan/apply still use the CI plan stamp, and smoke/recheck run after redeploy.

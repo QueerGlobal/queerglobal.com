@@ -122,6 +122,28 @@ describe("deploy-production deploy job secrets and cleanup", () => {
   });
 });
 
+describe("deploy-production manual jobs and gating", () => {
+  const yaml = fs.readFileSync(workflowPath, "utf8");
+
+  it("runs tests before manual Worker rollback", () => {
+    const rollback = extractJobBlock(yaml, "rollback");
+    assert.match(rollback, /needs: test_on_worker_rollback/);
+  });
+
+  it("documents why redeploy_release_tag skips the push test job", () => {
+    assert.match(yaml, /Skips the push test job: release tags are created only after deploy smoke and recheck passed/);
+  });
+
+  it("plans before applying infra in deploy and redeploy jobs", () => {
+    const deploy = extractJobBlock(yaml, "deploy");
+    const redeploy = extractJobBlock(yaml, "redeploy_release_tag");
+    assert.match(deploy, /run-infra-tofu-plan\.sh/);
+    assert.match(deploy, /run-infra-tofu-apply\.sh/);
+    assert.match(redeploy, /run-infra-tofu-plan\.sh/);
+    assert.match(redeploy, /run-infra-tofu-apply\.sh/);
+  });
+});
+
 describe("deploy-production jobs that verify the environment", () => {
   const yaml = fs.readFileSync(workflowPath, "utf8");
 

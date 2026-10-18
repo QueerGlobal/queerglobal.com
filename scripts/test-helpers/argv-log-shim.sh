@@ -24,12 +24,37 @@ case "$name" in
       shift
       exec "$@"
     fi
+    if [[ "$*" == *secrets*get*BOOTSTRAP_STATE_PASSPHRASE* ]]; then
+      if [ -f "${ARGV_DOPPLER_PASSPHRASE_FILE:-}" ]; then
+        cat "${ARGV_DOPPLER_PASSPHRASE_FILE}"
+      else
+        exit 1
+      fi
+      exit 0
+    fi
+    if [[ "$*" == *secrets*set*BOOTSTRAP_STATE_PASSPHRASE* ]]; then
+      cat >"${ARGV_DOPPLER_PASSPHRASE_FILE:-/dev/null}"
+      exit 0
+    fi
+    if [[ "$*" == *secrets*set* ]]; then
+      cat >/dev/null
+      exit 0
+    fi
     cat >/dev/null
     ;;
   tofu)
     case " $* " in
       *" show -json "*)
         printf '%s\n' '{"resource_changes":[{"address":"cloudflare_workers_custom_domain.coming_soon","change":{"actions":["delete"]}},{"address":"cloudflare_workers_script.coming_soon","change":{"actions":["delete"]}}]}'
+        ;;
+      *" plan "*)
+        for arg in "$@"; do
+          case "$arg" in
+            -out=*)
+              : >"${arg#-out=}"
+              ;;
+          esac
+        done
         ;;
       *" apply "*)
         if [ -n "${ARGV_TOFU_FAIL_APPLY:-}" ]; then exit 1; fi

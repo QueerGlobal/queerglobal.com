@@ -24,7 +24,6 @@ export TF_VAR_cloudflare_account_id=0123456789abcdef0123456789abcdef
 export TF_VAR_github_token=ghp_mock_rotation_e2e
 export TF_VAR_doppler_management_token=dp.pt.mock_rotation_e2e
 export TF_VAR_doppler_project=mock-rotation-e2e
-export TF_VAR_production_reviewer_usernames='["octocat"]'
 export TF_VAR_bootstrap_state_passphrase="$OLD1"
 export TF_VAR_bootstrap_state_passphrase_next=""
 unset TF_ENCRYPTION

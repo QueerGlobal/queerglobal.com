@@ -62,8 +62,6 @@ describe("e2e preflight helper marker", () => {
     process.env.TF_VAR_github_token = "ghp_test";
     process.env.TF_VAR_doppler_management_token = "dp.pt.test";
     process.env.TF_VAR_doppler_project = "queerglobal";
-    process.env.TF_VAR_production_reviewer_usernames = '["octocat"]';
-
     const code = await runBootstrapE2ePreflight(marker);
     assert.equal(code, 0);
     const contents = await fs.readFile(marker, "utf8");

@@ -96,9 +96,11 @@ command line. To redeploy a
 previous release, run **Deploy production** via **Run workflow**, set
 `rollback_release_tag` to the earlier tag (for example
 `release/42-0123456789abcdef0123456789abcdef01234567`), and approve the production environment.
+That job skips the push test suite because the tag was already validated on its original deploy; OpenTofu plan/apply still run under production approval.
 
 Manual Worker version rollback (without checking out a tag) uses the
 `rollback_version_id` workflow input with a Cloudflare Workers version UUID.
+The workflow runs tests before that rollback job and still requires production approval.
 
 **First deploy, smoke or recheck failed:** there is no previous Worker version
 to roll back to. The deploy workflow runs

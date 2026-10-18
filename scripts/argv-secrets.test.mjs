@@ -27,7 +27,6 @@ const FAKES = Object.freeze({
   DOPPLER_TOKEN: "dp.st.fake-doppler-argv-0006",
   TF_VAR_github_token: "github_pat_fakeArgv0007",
   TF_VAR_doppler_management_token: "dp.pt.fake-mgmt-argv-0008",
-  TF_VAR_bootstrap_state_passphrase: "fake-passphrase-argv-0009",
 });
 
 const realBin = (name) => execFileSync("bash", ["-c", `command -v ${name}`], { encoding: "utf8" }).trim();
@@ -107,6 +106,8 @@ function runAll(root) {
   execFileSync(REAL.git, ["init", "-q", checkout]);
   execFileSync(REAL.git, ["-C", checkout, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "c"]);
   fs.writeFileSync(path.join(root, "infra", "bootstrap", "terraform.tfstate"), '{"encrypted":true}');
+  fs.writeFileSync(path.join(root, "bootstrap-passphrase.txt"), "mock-bootstrap-passphrase-for-ci-long-enough");
+  fs.mkdirSync(path.join(root, "ci-plan"), { recursive: true });
   fs.writeFileSync(path.join(root, "first-deploy"), "__NO_PREVIOUS_WORKER__\n");
   fs.writeFileSync(path.join(root, "existing"), `${PREVIOUS_VERSION}\n`);
 
@@ -127,8 +128,8 @@ function runAll(root) {
     TF_STATE_REGION: "auto",
     TF_STATE_ENDPOINT: "https://example.invalid",
     TF_VAR_cloudflare_account_id: "0123456789abcdef0123456789abcdef",
-    TF_VAR_production_reviewer_usernames: '["mnyon-grandkru"]',
     TF_VAR_doppler_project: "queerglobal",
+    ARGV_DOPPLER_PASSPHRASE_FILE: path.join(root, "bootstrap-passphrase.txt"),
     TF_VAR_doppler_bootstrap_config: "bootstrap",
     BOOTSTRAP_FIRST_RUN: "1",
     WORKER_NAME: "queerglobal-grandkru",
@@ -136,8 +137,21 @@ function runAll(root) {
   const step = (name) => workflowStepRun(yaml, name);
   const runs = {
     "workflow capture": [root, ["-ec", step("Capture current Worker version")], {}],
-    "workflow apply": [root, ["-ec", step("OpenTofu init, plan, and apply")], {}],
-    "apply with failing tofu": [root, ["scripts/run-infra-tofu-apply.sh"], { ARGV_TOFU_FAIL_APPLY: "1" }],
+    "workflow plan and apply": [
+      root,
+      [
+        "-ec",
+        `export GITHUB_ACTIONS=true GITHUB_RUN_ID=1 INFRA_CI_PLAN_DIR=${JSON.stringify(path.join(root, "ci-plan"))}
+${step("OpenTofu plan for production")}
+${step("OpenTofu apply production plan")}`,
+      ],
+      {},
+    ],
+    "apply with failing tofu": [
+      root,
+      ["scripts/run-infra-tofu-apply.sh"],
+      { ARGV_TOFU_FAIL_APPLY: "1", INFRA_BREAK_GLASS: "1" },
+    ],
     "workflow first-deploy cleanup": [root, ["-ec", step("Roll back Worker on smoke or recheck failure").replaceAll(".previous-worker-version", "first-deploy")], {}],
     "workflow Worker rollback": [root, ["-ec", step("Roll back Worker on smoke or recheck failure").replaceAll(".previous-worker-version", "existing")], {}],
     "manual rollback": [root, ["-ec", step("Roll back Worker")], { ROLLBACK_VERSION_ID: PREVIOUS_VERSION }],
@@ -192,7 +206,7 @@ describe("no secrets on any command line (real scripts through argv shims)", { c
     const { records, results } = runAll(root);
     assert.deepEqual(results, {
       "workflow capture": 0,
-      "workflow apply": 0,
+      "workflow plan and apply": 0,
       "apply with failing tofu": 1,
       "workflow first-deploy cleanup": 0,
       "workflow Worker rollback": 0,
@@ -202,7 +216,10 @@ describe("no secrets on any command line (real scripts through argv shims)", { c
     });
     assert.ok(called(records, "tofu", /plan -input=false -out=/), "main apply plan ran");
     assert.ok(called(records, "tofu", /plan -destroy .*-target=cloudflare_workers_script\.coming_soon/), "cleanup plan ran");
-    assert.ok(called(records, "node", /report-cli-failure\.mjs run-infra-tofu-apply/), "failure was reported");
+    assert.ok(
+      records.some((r) => r.cmd === "node" && r.args.some((a) => /report-cli-failure\.mjs/.test(a))),
+      "failure was reported",
+    );
     assert.ok(called(records, "node", /worker-rollback\.mjs 11111111-/), "Worker rollback ran");
     assert.ok(called(records, "doppler", /^secrets set BOOTSTRAP_STATE_ENCRYPTED/), "bootstrap state backup ran");
     assert.ok(called(records, "git", /^-c credential\.helper= .* push file:\/\/.*refs\/tags\/release\//), "release tag push ran");

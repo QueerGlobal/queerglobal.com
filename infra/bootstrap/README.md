@@ -40,6 +40,16 @@ Run `node scripts/preflight-bootstrap-cloudflare.mjs` after exporting `CLOUDFLAR
 
 Use a **personal token** (`dp.pt.…`) or **service account token** (`dp.sa.…`) with **Collaborator** or higher on the **`prd`** environment. A config service token (`dp.st.…`) cannot create `doppler_service_token` (`main.tf`).
 
+## Hand inputs (only three)
+
+Bootstrap never takes secrets on argv. The only values Mark types at run time are these three tokens (stdin or Doppler, not the command line):
+
+1. **`CLOUDFLARE_API_TOKEN`**: bootstrap Cloudflare API token (see policies below).
+2. **`TF_VAR_github_token`**: fine-grained GitHub PAT for this repository.
+3. **`TF_VAR_doppler_management_token`**: Doppler management token for the Terraform provider.
+
+Everything else is committed config or generated in code: production reviewers live in **`production-reviewers.auto.tfvars.json`** (OpenTofu auto-loads it). The bootstrap state passphrase is created on the first apply (strong random, never printed) and stored in the bootstrap Doppler config; later runs load it from there via `scripts/bootstrap-passphrase-env.sh`.
+
 ## Read-only preflight (before any Doppler or OpenTofu write)
 
 Export project slugs, then verify tokens (read-only checks only):
@@ -62,8 +72,6 @@ read -rs TF_VAR_doppler_management_token
 echo
 export TF_VAR_doppler_management_token
 
-export TF_VAR_production_reviewer_usernames='["your-github-username"]'
-
 node scripts/preflight-bootstrap.mjs
 ```
 
@@ -78,35 +86,23 @@ Bootstrap Node CLIs (`preflight-bootstrap.mjs` and `preflight-bootstrap-cloudfla
 
 ## Bootstrap Doppler setup (after preflight)
 
-Create the bootstrap Doppler environment and config, then set the state encryption passphrase (stdin, not argv):
+Create the bootstrap Doppler environment and config (no passphrase yet; first apply generates it):
 
 ```bash
 doppler environments create Bootstrap \
   -p "$TF_VAR_doppler_project" \
   --slug "$TF_VAR_doppler_bootstrap_config"
-
-openssl rand -base64 24 | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE \
-  -p "$TF_VAR_doppler_project" \
-  -c "$TF_VAR_doppler_bootstrap_config"
 ```
 
 ## State encryption, backup, and restore
 
-OpenTofu 1.13+ encrypts bootstrap state and plan files with PBKDF2 + AES-GCM under key provider **`bootstrap`** (`versions.tf`).
+OpenTofu 1.13+ encrypts bootstrap state and plan files with PBKDF2 + AES-GCM under key provider **`bootstrap`** (`versions.tf`). The key provider name stays **`bootstrap`** so the existing two-hop rotation flow still works.
 
-Load the current passphrase from the bootstrap Doppler config:
-
-```bash
-export TF_VAR_bootstrap_state_passphrase="$(
-  doppler secrets get BOOTSTRAP_STATE_PASSPHRASE --plain \
-    -p "$TF_VAR_doppler_project" \
-    -c "$TF_VAR_doppler_bootstrap_config"
-)"
-```
+On first bootstrap, set `BOOTSTRAP_FIRST_RUN=1` and run apply: `scripts/bootstrap-passphrase-env.sh` generates a strong passphrase, stores it in the bootstrap Doppler config (CI cannot read that config), and exports `TF_VAR_bootstrap_state_passphrase` without printing it. Later runs load the passphrase from Doppler the same way.
 
 The passphrase must be at least 16 characters.
 
-After each successful apply, `bash scripts/bootstrap-tofu-apply.sh` (or `bash scripts/bootstrap-state-backup.sh`) pipes the encrypted local state into Doppler:
+After each successful apply, `bash scripts/bootstrap-tofu-apply.sh` (or `bash scripts/bootstrap-state-backup.sh`) pipes the encrypted local state into Doppler. If backup fails, the run fails and the local state path is printed. If apply finished but the state file is missing, backup exits with an error (no silent skip).
 
 ```bash
 cat infra/bootstrap/terraform.tfstate | doppler secrets set BOOTSTRAP_STATE_ENCRYPTED \
@@ -119,11 +115,7 @@ On a fresh machine, `bash scripts/bootstrap-tofu-init.sh` restores from `BOOTSTR
 ## Apply workflow (local state only)
 
 ```bash
-export TF_VAR_bootstrap_state_passphrase="$(
-  doppler secrets get BOOTSTRAP_STATE_PASSPHRASE --plain \
-    -p "$TF_VAR_doppler_project" \
-    -c "$TF_VAR_doppler_bootstrap_config"
-)"
+export BOOTSTRAP_FIRST_RUN=1   # only on the first bootstrap on a new machine
 
 bash scripts/bootstrap-tofu-apply.sh
 ```

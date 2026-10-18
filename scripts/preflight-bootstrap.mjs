@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runBootstrapCli } from "./bootstrap-error-report.mjs";
+import { loadProductionReviewerUsernames } from "./lib/bootstrap-reviewers.mjs";
 import { githubBearerRequest } from "./lib/cloudflare-github-api.mjs";
 import { preflightBootstrapCloudflare } from "./preflight-bootstrap-cloudflare.mjs";
 
@@ -161,17 +162,16 @@ export async function preflightBootstrapDopplerIsolation(options = {}) {
  */
 export async function runPreflightBootstrapCli(options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
-  const reviewersRaw = process.env.TF_VAR_production_reviewer_usernames ?? "";
-
-  let reviewers = [];
+  const repoRoot = options.repoRoot ?? process.cwd();
+  let reviewers;
   try {
-    reviewers = JSON.parse(reviewersRaw);
-  } catch {
-    console.error("TF_VAR_production_reviewer_usernames must be valid JSON array.");
+    reviewers = options.reviewers ?? loadProductionReviewerUsernames(repoRoot);
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
     return 1;
   }
-  if (!Array.isArray(reviewers) || reviewers.length === 0) {
-    console.error("TF_VAR_production_reviewer_usernames must list at least one reviewer.");
+  if (reviewers.length === 0) {
+    console.error("production-reviewers.auto.tfvars.json must list at least one reviewer.");
     return 1;
   }
 

@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Load TF_VAR_bootstrap_state_passphrase from the bootstrap Doppler config, or create it on first run.
+set -euo pipefail
+
+_self="${BASH_SOURCE[0]:-$0}"
+dir="$(cd "$(dirname "$_self")/.." && pwd)"
+project="${TF_VAR_doppler_project:-}"
+config="${TF_VAR_doppler_bootstrap_config:-bootstrap}"
+first_run="${BOOTSTRAP_FIRST_RUN:-}"
+pass_file=""
+
+cleanup() {
+  if [ -n "$pass_file" ] && [ -f "$pass_file" ]; then
+    rm -f "$pass_file"
+  fi
+}
+_sourced=0
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+  _sourced=1
+else
+  trap cleanup EXIT
+fi
+
+if [ -z "$project" ]; then
+  echo "TF_VAR_doppler_project is required to load the bootstrap state passphrase." >&2
+  exit 1
+fi
+if ! command -v doppler >/dev/null 2>&1; then
+  echo "doppler CLI is required to load the bootstrap state passphrase." >&2
+  exit 1
+fi
+
+umask 077
+pass_file="$(mktemp)"
+
+if doppler secrets get BOOTSTRAP_STATE_PASSPHRASE --plain -p "$project" -c "$config" >"$pass_file" 2>/dev/null; then
+  :
+elif [ "$first_run" = "1" ]; then
+  node "$dir/scripts/bootstrap-generate-passphrase.mjs" | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE -p "$project" -c "$config"
+  doppler secrets get BOOTSTRAP_STATE_PASSPHRASE --plain -p "$project" -c "$config" >"$pass_file"
+else
+  echo "BOOTSTRAP_STATE_PASSPHRASE is missing in Doppler ($project/$config); set BOOTSTRAP_FIRST_RUN=1 for a new bootstrap." >&2
+  exit 1
+fi
+
+if [ ! -s "$pass_file" ]; then
+  echo "Bootstrap state passphrase in Doppler is empty." >&2
+  exit 1
+fi
+
+export TF_VAR_bootstrap_state_passphrase
+TF_VAR_bootstrap_state_passphrase="$(<"$pass_file")"
+if [ "$_sourced" = 1 ]; then
+  rm -f "$pass_file"
+  pass_file=""
+fi

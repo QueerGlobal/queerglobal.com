@@ -34,6 +34,22 @@ function stubBin(name, script) {
   return dir;
 }
 
+/** @param {{ backupLog?: string }} [opts] */
+function dopplerBootstrapStub(opts = {}) {
+  const backupLog = opts.backupLog ?? "";
+  const backupLine = backupLog ? `if [ "$2" = "set" ] || [ "$3" = "set" ]; then cat >> "${backupLog}"; fi` : "";
+  return stubBin(
+    "doppler",
+    `case "$*" in
+  *get*BOOTSTRAP_STATE_PASSPHRASE*) printf '%s' 'mock-bootstrap-passphrase-for-ci' ;;
+  *set*BOOTSTRAP_STATE_ENCRYPTED*) ${backupLog ? `cat >> "${backupLog}"` : "cat >/dev/null"} ;;
+  *set*) exit 0 ;;
+esac
+${backupLine}
+exit 0`,
+  );
+}
+
 describe("cloudflare preflight reasons", () => {
   it("baseline passes with all probes allowed", async () => {
     const r = await preflightBootstrapCloudflare({
@@ -91,12 +107,14 @@ describe("bootstrap preflight CLI", () => {
         TF_VAR_github_token: "ghp_x",
         TF_VAR_doppler_management_token: "dp.pt.x",
         TF_VAR_doppler_project: "queerglobal",
-        TF_VAR_production_reviewer_usernames: "[]",
       });
       const errors = [];
       const orig = console.error;
       console.error = (m) => errors.push(String(m));
-      const code = await runPreflightBootstrapCli({ fetchImpl: bootstrapStandInFetch() });
+      const code = await runPreflightBootstrapCli({
+        fetchImpl: bootstrapStandInFetch(),
+        reviewers: [],
+      });
       console.error = orig;
       assert.equal(code, 1);
       assert.match(errors.join("\n"), /reviewer/i);
@@ -130,15 +148,19 @@ describe("bootstrap-tofu-apply.sh", () => {
     const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tofu-")), "argv");
     const bin = stubBin("tofu", `echo "$*" >> "${log}"`);
     const nodeBin = path.dirname(process.execPath);
+    const doppler = dopplerBootstrapStub();
+    const work = bootstrapTree((root) => {
+      fs.unlinkSync(path.join(root, "infra", "bootstrap", "production-reviewers.auto.tfvars.json"));
+    });
     const env = {
-      PATH: `${bin}:${nodeBin}:/usr/local/bin:/usr/bin:/bin`,
+      PATH: `${bin}:${doppler}:${nodeBin}:/usr/local/bin:/usr/bin:/bin`,
       HOME: os.tmpdir(),
       BOOTSTRAP_FIRST_RUN: "1",
       TF_VAR_doppler_project: "queerglobal",
     };
-    const r = spawnSync("bash", ["scripts/bootstrap-tofu-apply.sh"], { cwd: bootstrapTree(), env, encoding: "utf8" });
+    const r = spawnSync("bash", ["scripts/bootstrap-tofu-apply.sh"], { cwd: work, env, encoding: "utf8" });
     assert.notEqual(r.status, 0);
-    assert.match(r.stderr, /TF_VAR_production_reviewer_usernames must be valid JSON array/);
+    assert.match(r.stderr, /production-reviewers\.auto\.tfvars\.json/);
     assert.equal(fs.existsSync(log), false, "tofu ran before preflight passed");
   });
 
@@ -147,6 +169,37 @@ describe("bootstrap-tofu-apply.sh", () => {
     assert.doesNotMatch(src, /auto-approve/);
     assert.match(src, /tofu -chdir="\$bootstrap_dir" apply "\$@"/);
     assert.match(src, /bootstrap-state-backup\.sh/);
+    assert.doesNotMatch(src, /bootstrap-state-backup\.sh.*\|\| true/);
+  });
+
+  it("fails the bootstrap apply when state backup to Doppler fails after a successful apply", () => {
+    const work = bootstrapTree((root) =>
+      fs.writeFileSync(path.join(root, "infra", "bootstrap", "terraform.tfstate"), '{"encrypted":true}'),
+    );
+    const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`);
+    const tofu = stubBin("tofu", "exit 0");
+    const doppler = stubBin(
+      "doppler",
+      `case "$*" in
+  *get*BOOTSTRAP_STATE_PASSPHRASE*) printf '%s' 'mock-bootstrap-passphrase-for-ci' ;;
+  *set*BOOTSTRAP_STATE_ENCRYPTED*) echo failed >&2; exit 1 ;;
+esac
+exit 0`,
+    );
+    const nodeBin = path.dirname(process.execPath);
+    const r = spawnSync("bash", ["scripts/bootstrap-tofu-apply.sh"], {
+      cwd: work,
+      env: {
+        PATH: `${node}:${tofu}:${doppler}:${nodeBin}:/usr/bin:/bin`,
+        HOME: os.tmpdir(),
+        BOOTSTRAP_FIRST_RUN: "1",
+        TF_VAR_doppler_project: "queerglobal",
+        TF_VAR_doppler_bootstrap_config: "bootstrap",
+      },
+      encoding: "utf8",
+    });
+    assert.notEqual(r.status, 0);
+    assert.match(r.stderr, /backup to Doppler failed/);
   });
 
   it("backs up state on EXIT when apply fails after it starts", () => {
@@ -162,11 +215,7 @@ describe("bootstrap-tofu-apply.sh", () => {
   *) exit 0 ;;
 esac`,
     );
-    const doppler = stubBin(
-      "doppler",
-      `if [ "$2" = "set" ] || [ "$3" = "set" ]; then cat >> "${backupLog}"; fi
-exit 0`,
-    );
+    const doppler = dopplerBootstrapStub({ backupLog });
     const nodeBin = path.dirname(process.execPath);
     const r = spawnSync("bash", ["scripts/bootstrap-tofu-apply.sh"], {
       cwd: work,
@@ -190,7 +239,15 @@ exit 0`,
     const events = path.join(work, "events.log");
     const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`);
     const tofu = stubBin("tofu", "exit 0");
-    const doppler = stubBin("doppler", `cat >/dev/null; echo backup >> "${events}"`);
+    const doppler = stubBin(
+      "doppler",
+      `case "$*" in
+  *get*BOOTSTRAP_STATE_PASSPHRASE*) printf '%s' 'mock-bootstrap-passphrase-for-ci' ;;
+  *set*BOOTSTRAP_STATE_ENCRYPTED*) echo backup >> "${events}" ;;
+esac
+cat >/dev/null
+exit 0`,
+    );
     const nodeBin = path.dirname(process.execPath);
     const r = spawnSync(
       "bash",
@@ -232,7 +289,11 @@ exit 0`,
         "scripts/bootstrap-tofu-apply.sh",
         "-replace=doppler_service_token.github_actions_production",
       ],
-      { cwd: bootstrapTree(), env, encoding: "utf8" },
+      {
+        cwd: bootstrapTree(),
+        env: { ...env, PATH: `${tofu}:${node}:${dopplerBootstrapStub()}:${env.PATH}` },
+        encoding: "utf8",
+      },
     );
     assert.equal(r.status, 0, r.stderr);
     const argv = fs.readFileSync(log, "utf8");
@@ -252,7 +313,7 @@ exit 0`,
     const backup = path.join(work, "backup.log");
     const tofu = stubBin("tofu", `echo "$*" >> "${log}"; exit 0`);
     const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`);
-    const doppler = stubBin("doppler", `if [ "$2" = "set" ]; then cat >> "${backup}"; fi; exit 0`);
+    const doppler = dopplerBootstrapStub({ backupLog: backup });
     const nodeBin = path.dirname(process.execPath);
     const r = spawnSync("bash", ["scripts/bootstrap-tofu-apply.sh"], {
       cwd: work,
@@ -473,7 +534,6 @@ describe("bootstrap preflight CLI runs the Doppler isolation check", () => {
         TF_VAR_doppler_project: "queerglobal",
         TF_VAR_doppler_config: "prd",
         TF_VAR_doppler_bootstrap_config: "bootstrap",
-        TF_VAR_production_reviewer_usernames: '["octocat"]',
       });
       console.error = (m) => errors.push(String(m));
       const fetchImpl = fetchWith((u) =>

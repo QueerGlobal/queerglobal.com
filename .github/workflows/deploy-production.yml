@@ -115,10 +115,20 @@ jobs:
           doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- \
             node scripts/capture-worker-version.mjs .previous-worker-version
 
-      - name: OpenTofu init, plan, and apply
+      - name: OpenTofu plan for production
+        id: infra_plan
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          INFRA_CI_PLAN_DIR: ${{ runner.temp }}/infra-plan-${{ github.run_id }}
+        run: |
+          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
+            bash scripts/run-infra-tofu-plan.sh
+
+      - name: OpenTofu apply production plan
         id: apply
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          INFRA_CI_PLAN_DIR: ${{ runner.temp }}/infra-plan-${{ github.run_id }}
         run: |
           doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
             bash scripts/run-infra-tofu-apply.sh
@@ -174,8 +184,30 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/push-release-tag.sh
 
+  test_on_worker_rollback:
+    if: github.event_name == 'workflow_dispatch' && inputs.rollback_version_id != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
   rollback:
     if: github.event_name == 'workflow_dispatch' && inputs.rollback_version_id != ''
+    needs: test_on_worker_rollback
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -212,6 +244,7 @@ jobs:
           doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- \
             env WORKER_NAME=queerglobal-grandkru node scripts/worker-rollback.mjs "$ROLLBACK_VERSION_ID"
 
+  # Skips the push test job: release tags are created only after deploy smoke and recheck passed.
   redeploy_release_tag:
     if: github.event_name == 'workflow_dispatch' && inputs.rollback_release_tag != ''
     runs-on: ubuntu-latest
@@ -259,19 +292,22 @@ jobs:
       - name: Install Doppler CLI
         uses: DopplerHQ/cli-action@014df23b1329b615816a38eb5f473bb9000700b1 # v3
 
-      - name: OpenTofu init, plan, and apply from tag
+      - name: OpenTofu plan from release tag
+        env:
+          DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+          INFRA_CI_PLAN_DIR: ${{ runner.temp }}/infra-plan-${{ github.run_id }}
+        run: |
+          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
+            bash scripts/run-infra-tofu-plan.sh
+
+      - name: OpenTofu apply release tag plan
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
           ROLLBACK_RELEASE_TAG: ${{ inputs.rollback_release_tag }}
+          INFRA_CI_PLAN_DIR: ${{ runner.temp }}/infra-plan-${{ github.run_id }}
         run: |
           doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
             bash -ec '
-            test -n "$CLOUDFLARE_API_TOKEN"
-            test -n "$CLOUDFLARE_ACCOUNT_ID"
-            test -n "$TF_STATE_BUCKET"
-            test -n "$TF_STATE_ENDPOINT"
-            test -n "$AWS_ACCESS_KEY_ID"
-            test -n "$AWS_SECRET_ACCESS_KEY"
             scripts/run-infra-tofu-apply.sh
             echo "Redeployed release tag ${ROLLBACK_RELEASE_TAG}."
           '
