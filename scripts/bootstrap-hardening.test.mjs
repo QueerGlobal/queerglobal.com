@@ -8,6 +8,7 @@ import { describe, it } from "node:test";
 import { preflightBootstrapCloudflare } from "./preflight-bootstrap-cloudflare.mjs";
 import { preflightBootstrapDopplerIsolation, runPreflightBootstrapCli } from "./preflight-bootstrap.mjs";
 import { ACCOUNT_ID, bootstrapStandInFetch, fetchWith } from "./test-helpers/fetch-stub.mjs";
+import { mkdtempTracked, rmTracked } from "./test-helpers/test-temp.mjs";
 
 const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 
@@ -19,7 +20,7 @@ const REPO = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..")
  * @returns {string}
  */
 function bootstrapTree(prepare) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "bootstrap-tree-"));
+  const root = mkdtempTracked("bootstrap-tree-");
   const skip = (src) => !/(^|\/)(\.terraform|terraform\.tfstate(\.backup)?)$/.test(src);
   fs.cpSync(path.join(REPO, "scripts"), path.join(root, "scripts"), { recursive: true, filter: skip });
   fs.cpSync(path.join(REPO, "infra", "bootstrap"), path.join(root, "infra", "bootstrap"), { recursive: true, filter: skip });
@@ -29,7 +30,7 @@ function bootstrapTree(prepare) {
 }
 
 function stubBin(name, script) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stub-"));
+  const dir = mkdtempTracked("stub-");
   fs.writeFileSync(path.join(dir, name), `#!/usr/bin/env bash\n${script}\n`, { mode: 0o755 });
   return dir;
 }
@@ -126,7 +127,7 @@ describe("bootstrap preflight CLI", () => {
 
 describe("bootstrap-state-restore.sh fail closed", () => {
   it("exits 1 and leaves no state file when doppler secrets get fails", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "restore-"));
+    const dir = mkdtempTracked("restore-");
     const bin = stubBin("doppler", 'echo "Doppler Error: unauthorized" >&2; exit 1');
     const r = spawnSync("bash", ["scripts/bootstrap-state-restore.sh", dir], {
       env: {
@@ -145,7 +146,7 @@ describe("bootstrap-state-restore.sh fail closed", () => {
 
 describe("bootstrap-tofu-apply.sh", () => {
   it("never calls tofu when preflight fails", () => {
-    const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tofu-")), "argv");
+    const log = path.join(mkdtempTracked("tofu-"), "argv");
     const bin = stubBin("tofu", `echo "$*" >> "${log}"`);
     const nodeBin = path.dirname(process.execPath);
     const doppler = dopplerBootstrapStub();
@@ -270,7 +271,7 @@ exit 0`,
   });
 
   it("passes -replace through to tofu apply after preflight", () => {
-    const log = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "tofu-apply-")), "argv.log");
+    const log = path.join(mkdtempTracked("tofu-apply-"), "argv.log");
     const tofu = stubBin("tofu", `echo "$*" >> "${log}"; exit 0`);
     const node = stubBin(
       "node",
@@ -307,7 +308,7 @@ exit 0`,
     const work = bootstrapTree((root) =>
       fs.writeFileSync(path.join(root, "infra", "bootstrap", "terraform.tfstate"), '{"real":true}'),
     );
-    const decoy = fs.mkdtempSync(path.join(os.tmpdir(), "bootstrap-decoy-"));
+    const decoy = mkdtempTracked("bootstrap-decoy-");
     fs.writeFileSync(path.join(decoy, "terraform.tfstate"), '{"decoy":true}');
     const log = path.join(work, "tofu.log");
     const backup = path.join(work, "backup.log");
@@ -344,7 +345,7 @@ const NEW_PASS = "new-passphrase-1111111111";
  * @param {{ stdin: string, showOutput?: string, dopplerNext?: string }} opts
  */
 function runRotate(opts) {
-  const work = fs.mkdtempSync(path.join(os.tmpdir(), "rotate-"));
+  const work = mkdtempTracked("rotate-");
   const state = path.join(work, "state");
   fs.mkdirSync(state);
   fs.writeFileSync(path.join(state, "terraform.tfstate"), '{"encrypted":"stand-in"}');
@@ -427,7 +428,7 @@ describe("bootstrap-passphrase-rotate.sh promote (real script, stub tofu and dop
   it("README promote snippet checks NEXT before any Doppler write", () => {
     const readme = fs.readFileSync("infra/bootstrap/README.md", "utf8");
     const snippet = readme.split("Promote the new passphrase in Doppler")[1].split("```bash\n")[1].split("\n```")[0];
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "promote-"));
+    const work = mkdtempTracked("promote-");
     try {
       fs.mkdirSync(path.join(work, "infra", "bootstrap"), { recursive: true });
       fs.mkdirSync(path.join(work, "scripts"));

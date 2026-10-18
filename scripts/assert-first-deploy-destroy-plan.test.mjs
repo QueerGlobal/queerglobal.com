@@ -6,6 +6,7 @@ import path from "node:path";
 import { describe, it } from "node:test";
 
 import { checkFirstDeployDestroyPlan } from "./assert-first-deploy-destroy-plan.mjs";
+import { mkdtempTracked } from "./test-helpers/test-temp.mjs";
 
 const del = (address) => ({ address, change: { actions: ["delete"] } });
 
@@ -41,7 +42,7 @@ describe("run-infra-first-deploy-cleanup.sh gate", () => {
    * @param {string} planChanges
    */
   function runCleanup(marker, planChanges) {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "cleanup-gate-"));
+    const work = mkdtempTracked("cleanup-gate-");
     const bin = path.join(work, "bin");
     fs.mkdirSync(bin);
     const log = path.join(work, "tofu.log");
@@ -80,7 +81,7 @@ describe("run-infra-first-deploy-cleanup.sh gate", () => {
   });
 
   it("refuses before any OpenTofu call when a previous Worker version exists", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "cleanup-gate-"));
+    const work = mkdtempTracked("cleanup-gate-");
     const bin = path.join(work, "bin");
     fs.mkdirSync(bin);
     const log = path.join(work, "tofu.log");

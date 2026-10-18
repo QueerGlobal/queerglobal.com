@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
+import { mkdtempTracked } from "./test-helpers/test-temp.mjs";
+
 describe("run-infra-tofu-apply.sh gating", () => {
   it("refuses to run without a CI plan stamp", () => {
     const r = spawnSync("bash", ["scripts/run-infra-tofu-apply.sh"], {
@@ -24,7 +26,7 @@ describe("run-infra-tofu-apply.sh gating", () => {
   });
 
   it("has no break-glass switch: INFRA_BREAK_GLASS=1 still refuses and never runs tofu", () => {
-    const tofu = fs.mkdtempSync(path.join(os.tmpdir(), "tofu-stub-"));
+    const tofu = mkdtempTracked("tofu-stub-");
     const log = path.join(tofu, "tofu.log");
     fs.writeFileSync(path.join(tofu, "tofu"), `#!/usr/bin/env bash\necho "$*" >> "${log}"\n`, { mode: 0o755 });
     try {
@@ -50,7 +52,7 @@ describe("run-infra-tofu-apply.sh gating", () => {
   });
 
   it("refuses a plan stamped by a different workflow run", () => {
-    const planDir = fs.mkdtempSync(path.join(os.tmpdir(), "ci-plan-"));
+    const planDir = mkdtempTracked("ci-plan-");
     try {
       fs.writeFileSync(path.join(planDir, "tfplan"), "plan");
       fs.writeFileSync(path.join(planDir, "stamp"), "98\n");
@@ -77,12 +79,12 @@ describe("run-infra-tofu-apply.sh gating", () => {
   });
 
   it("applies only a stamped plan in CI", () => {
-    const planDir = fs.mkdtempSync(path.join(os.tmpdir(), "ci-plan-"));
+    const planDir = mkdtempTracked("ci-plan-");
     const plan = path.join(planDir, "tfplan");
     fs.writeFileSync(plan, "plan");
     fs.writeFileSync(path.join(planDir, "stamp"), "99");
     const log = path.join(planDir, "tofu.log");
-    const tofu = fs.mkdtempSync(path.join(os.tmpdir(), "tofu-stub-"));
+    const tofu = mkdtempTracked("tofu-stub-");
     fs.writeFileSync(
       path.join(tofu, "tofu"),
       `#!/usr/bin/env bash

@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
+import { mkdtempTracked, rmTracked } from "./test-helpers/test-temp.mjs";
+
 /**
  * Runs the real deploy, rollback, cleanup, bootstrap and release tag scripts, and the
  * deploy workflow's own step commands, with fake secrets in the environment and every
@@ -56,7 +58,7 @@ function installShims(root) {
  * @returns {string}
  */
 function workTree(mutate) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "argv-tree-"));
+  const root = mkdtempTracked("argv-tree-");
   // Leave out provider caches and any local bootstrap state, so a developer's
   // real state is never copied into a temporary directory.
   const skip = (src) => !/(^|\/)(\.terraform|terraform\.tfstate(\.backup)?)$/.test(src);
@@ -214,6 +216,7 @@ const called = (records, cmd, pattern) =>
 describe("no secrets on any command line (real scripts through argv shims)", { concurrency: 1 }, () => {
   it("baseline: every script and workflow step runs and no fake secret reaches argv", () => {
     const root = workTree();
+    try {
     const { records, results } = runAll(root);
     assert.deepEqual(results, {
       "workflow capture": 0,
@@ -237,6 +240,9 @@ describe("no secrets on any command line (real scripts through argv shims)", { c
     const tags = execFileSync(REAL.git, ["--git-dir", path.join(root, "remote/QueerGlobal/queerglobal.com.git"), "tag"], { encoding: "utf8" });
     assert.match(tags, /^release\/1-0123456789abcdef0123456789abcdef01234567$/m);
     assertNoSecretOnArgv(records);
+    } finally {
+      rmTracked(root);
+    }
   });
 
   it("mutation: GitHub token in the tag push URL is caught", () => {
@@ -250,8 +256,12 @@ describe("no secrets on any command line (real scripts through argv shims)", { c
       assert.notEqual(mutated, src, "mutation did not apply");
       fs.writeFileSync(p, mutated);
     });
-    const { records } = runAll(root);
-    assert.throws(() => assertNoSecretOnArgv(records), /^Error: secret on argv: GITHUB_TOKEN via git$/);
+    try {
+      const { records } = runAll(root);
+      assert.throws(() => assertNoSecretOnArgv(records), /^Error: secret on argv: GITHUB_TOKEN via git$/);
+    } finally {
+      rmTracked(root);
+    }
   });
 
   it("mutation: Cloudflare token passed to curl as a header argument is caught", () => {
@@ -265,7 +275,11 @@ describe("no secrets on any command line (real scripts through argv shims)", { c
       assert.notEqual(mutated, src, "mutation did not apply");
       fs.writeFileSync(p, mutated);
     });
-    const { records } = runAll(root);
-    assert.throws(() => assertNoSecretOnArgv(records), /^Error: secret on argv: CLOUDFLARE_API_TOKEN via curl$/);
+    try {
+      const { records } = runAll(root);
+      assert.throws(() => assertNoSecretOnArgv(records), /^Error: secret on argv: CLOUDFLARE_API_TOKEN via curl$/);
+    } finally {
+      rmTracked(root);
+    }
   });
 });

@@ -6,10 +6,11 @@ import { describe, it } from "node:test";
 
 import { captureWorkerVersionId } from "./capture-worker-version.mjs";
 import { NO_PREVIOUS_WORKER_VERSION } from "./worker-rollback.mjs";
+import { mkdtempTracked } from "./test-helpers/test-temp.mjs";
 
 describe("captureWorkerVersionId", () => {
   it("writes the no-previous marker when the Worker does not exist", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "capture-worker-"));
+    const dir = mkdtempTracked("capture-worker-");
     const outputPath = path.join(dir, "previous-version");
     const fetchImpl = async () => ({
       ok: false,

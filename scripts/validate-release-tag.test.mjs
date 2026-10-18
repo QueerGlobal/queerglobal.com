@@ -12,6 +12,7 @@ import {
   verifyReleaseTagIsAncestorOfMain,
   verifyReleaseTagPointsAtEmbeddedSha,
 } from "./validate-release-tag.mjs";
+import { mkdtempTracked, rmTracked } from "./test-helpers/test-temp.mjs";
 
 describe("assertValidReleaseTag", () => {
   it("accepts deploy workflow release tags", () => {
@@ -50,7 +51,7 @@ describe("verifyReleaseTag rollback guards", () => {
   });
 
   it("refuses when the tag commit is not an ancestor of main", () => {
-    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "release-tag-git-"));
+    const repo = mkdtempTracked("release-tag-git-");
     try {
       execFileSync("git", ["init", "-q"], { cwd: repo });
       execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-q", "-m", "main"], {
@@ -74,7 +75,7 @@ describe("verifyReleaseTag rollback guards", () => {
       execFileSync("git", ["tag", mainTag], { cwd: repo });
       verifyReleaseTagIsAncestorOfMain({ tag: mainTag, execGit, mainRef: "refs/heads/main" });
     } finally {
-      fs.rmSync(repo, { recursive: true, force: true });
+      rmTracked(repo);
     }
   });
 });

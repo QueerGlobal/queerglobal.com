@@ -5,15 +5,17 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
+import { mkdtempTracked } from "./test-helpers/test-temp.mjs";
+
 function stubBin(name, script) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stub-"));
+  const dir = mkdtempTracked("stub-");
   fs.writeFileSync(path.join(dir, name), `#!/usr/bin/env bash\n${script}\n`, { mode: 0o755 });
   return dir;
 }
 
 describe("bootstrap-passphrase-env.sh", () => {
   it("creates and loads a passphrase on first bootstrap without printing it", () => {
-    const passFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "pass-")), "stored");
+    const passFile = path.join(mkdtempTracked("pass-"), "stored");
     const setLog = path.join(path.dirname(passFile), "set.log");
     const doppler = stubBin(
       "doppler",
@@ -50,7 +52,7 @@ exit 0`,
   it("stores a fresh random passphrase on each first bootstrap", () => {
     const stored = [];
     for (let i = 0; i < 2; i += 1) {
-      const work = fs.mkdtempSync(path.join(os.tmpdir(), "pass-gen-"));
+      const work = mkdtempTracked("pass-gen-");
       try {
         const passFile = path.join(work, "stored");
         fs.writeFileSync(
@@ -89,7 +91,7 @@ exit 0
   });
 
   it("does not overwrite the passphrase when Doppler get fails for a non-missing reason on first run", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "pass-refuse-"));
+    const work = mkdtempTracked("pass-refuse-");
     try {
       const setLog = path.join(work, "set.log");
       fs.writeFileSync(
@@ -124,7 +126,7 @@ exit 0
   });
 
   it("keeps the passphrase out of xtrace output and restores xtrace for the caller", () => {
-    const work = fs.mkdtempSync(path.join(os.tmpdir(), "pass-xtrace-"));
+    const work = mkdtempTracked("pass-xtrace-");
     try {
       const stored = "xtrace-check-passphrase-0123456789";
       fs.writeFileSync(path.join(work, "stored"), stored);

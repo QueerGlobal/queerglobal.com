@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
+import { mkdtempTracked } from "./test-helpers/test-temp.mjs";
+
 /**
  * @param {string[]} args
  * @param {NodeJS.ProcessEnv} env
@@ -25,7 +27,7 @@ function runRestore(args, env) {
 
 describe("bootstrap-state-restore.sh", () => {
   it("fails closed when Doppler project is missing and not first run", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bootstrap-restore-"));
+    const dir = mkdtempTracked("bootstrap-restore-");
     const result = runRestore([dir], {
       TF_VAR_doppler_project: "",
       BOOTSTRAP_FIRST_RUN: "",
@@ -35,7 +37,7 @@ describe("bootstrap-state-restore.sh", () => {
   });
 
   it("allows missing project when BOOTSTRAP_FIRST_RUN=1", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bootstrap-restore-"));
+    const dir = mkdtempTracked("bootstrap-restore-");
     const result = runRestore([dir], {
       TF_VAR_doppler_project: "",
       BOOTSTRAP_FIRST_RUN: "1",
@@ -45,7 +47,7 @@ describe("bootstrap-state-restore.sh", () => {
   });
 
   it("fails closed when doppler CLI is missing and not first run", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bootstrap-restore-"));
+    const dir = mkdtempTracked("bootstrap-restore-");
     const result = runRestore([dir], {
       TF_VAR_doppler_project: "queerglobal",
       BOOTSTRAP_FIRST_RUN: "",
@@ -56,7 +58,7 @@ describe("bootstrap-state-restore.sh", () => {
   });
 
   it("skips when local state already exists", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "bootstrap-restore-"));
+    const dir = mkdtempTracked("bootstrap-restore-");
     fs.writeFileSync(path.join(dir, "terraform.tfstate"), "{}");
     const result = runRestore([dir], { TF_VAR_doppler_project: "" });
     assert.equal(result.status, 0);

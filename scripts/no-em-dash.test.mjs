@@ -13,6 +13,7 @@ import {
   runNoEmDashCheck,
   scanForEmDash,
 } from "./no-em-dash.mjs";
+import { mkdtempTracked } from "./test-helpers/test-temp.mjs";
 
 describe("findEmDashLocations", () => {
   it("finds em dash with line and column", () => {
@@ -30,7 +31,7 @@ describe("findEmDashLocations", () => {
 
 describe("scanForEmDash", () => {
   it("scans allowed extensions and skips archive/", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "no-em-dash-"));
+    const tmp = mkdtempTracked("no-em-dash-");
     try {
       fs.writeFileSync(path.join(tmp, "ok.html"), "<p>fine</p>");
       fs.writeFileSync(path.join(tmp, "bad.md"), "nope" + EM_DASH);
@@ -49,7 +50,7 @@ describe("scanForEmDash", () => {
 
 describe("runNoEmDashCheck", () => {
   it("returns 0 when clean", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "no-em-dash-clean-"));
+    const tmp = mkdtempTracked("no-em-dash-clean-");
     try {
       fs.writeFileSync(path.join(tmp, "page.html"), "<title>ok</title>");
       assert.equal(runNoEmDashCheck(tmp, { fullTree: true, extensions: DEFAULT_EXTENSIONS }), 0);
@@ -59,7 +60,7 @@ describe("runNoEmDashCheck", () => {
   });
 
   it("returns 1 and formats report when em dash present", () => {
-    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "no-em-dash-fail-"));
+    const tmp = mkdtempTracked("no-em-dash-fail-");
     try {
       fs.writeFileSync(path.join(tmp, "x.css"), "/* " + EM_DASH + " */");
       assert.equal(runNoEmDashCheck(tmp, { fullTree: true, extensions: DEFAULT_EXTENSIONS }), 1);
