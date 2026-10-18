@@ -125,7 +125,7 @@ resource "github_repository_environment_deployment_policy" "production_main" {
   branch_pattern = "main"
 }
 
-# Read-only on doppler_config (prd). Do not grant this token access to doppler_bootstrap_config.
+# Scoped to var.doppler_config only (validated != doppler_bootstrap_config). access is read.
 resource "doppler_service_token" "github_actions_production" {
   project = var.doppler_project
   config  = var.doppler_config

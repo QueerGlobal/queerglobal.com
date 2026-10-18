@@ -39,9 +39,10 @@ jobs:
           cache: npm
 
       - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version: 1.13.1
+          checksums: 8ccbc6f8ee21d2827715f3c6e08a9b3e0209b1e62057c05067ef117e047c1a80
 
       - name: Install dependencies
         run: npm ci
@@ -101,9 +102,10 @@ jobs:
         run: node scripts/verify-production-environment.mjs
 
       - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version: 1.13.1
+          checksums: 8ccbc6f8ee21d2827715f3c6e08a9b3e0209b1e62057c05067ef117e047c1a80
 
       - name: Install Doppler CLI
         uses: DopplerHQ/cli-action@014df23b1329b615816a38eb5f473bb9000700b1 # v3
@@ -259,9 +261,10 @@ jobs:
         run: node scripts/verify-production-environment.mjs
 
       - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1
+        uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
         with:
           tofu_version: 1.13.1
+          checksums: 8ccbc6f8ee21d2827715f3c6e08a9b3e0209b1e62057c05067ef117e047c1a80
 
       - name: Install Doppler CLI
         uses: DopplerHQ/cli-action@014df23b1329b615816a38eb5f473bb9000700b1 # v3

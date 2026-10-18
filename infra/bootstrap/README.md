@@ -14,7 +14,25 @@ not use the R2 bucket it creates for its own state.
 ## Doppler configs
 
 - **`prd` (or `doppler_config`)**: deploy secrets and the read-only service token used as GitHub `DOPPLER_TOKEN`. CI and production workflows read this config only.
-- **`bootstrap` (or `doppler_bootstrap_config`)**: bootstrap-only secrets. Store **`BOOTSTRAP_STATE_PASSPHRASE`** here. The deploy service token must **not** have access to this config.
+- **`bootstrap` (or `doppler_bootstrap_config`)**: bootstrap-only secrets in a **separate Doppler environment**. Store **`BOOTSTRAP_STATE_PASSPHRASE`** here. The deploy service token must **not** have access to this config.
+
+Create the bootstrap Doppler environment and config before the first apply (each config belongs to one environment):
+
+```bash
+export TF_VAR_doppler_project="your-project"
+export TF_VAR_doppler_config="prd"
+export TF_VAR_doppler_bootstrap_config="bootstrap"
+
+doppler environments create Bootstrap \
+  -p "$TF_VAR_doppler_project" \
+  --slug "$TF_VAR_doppler_bootstrap_config"
+
+doppler secrets set BOOTSTRAP_STATE_PASSPHRASE="$(openssl rand -base64 24)" \
+  -p "$TF_VAR_doppler_project" \
+  -c "$TF_VAR_doppler_bootstrap_config"
+```
+
+OpenTofu rejects `doppler_config == doppler_bootstrap_config` so the GitHub Actions service token cannot be pointed at the bootstrap config.
 
 ## State encryption and passphrase
 
@@ -24,7 +42,8 @@ passphrase from the bootstrap Doppler config (never commit it):
 ```bash
 export TF_VAR_bootstrap_state_passphrase="$(
   doppler secrets get BOOTSTRAP_STATE_PASSPHRASE --plain \
-    --project "$DOPPLER_PROJECT" --config bootstrap
+    -p "$TF_VAR_doppler_project" \
+    -c "$TF_VAR_doppler_bootstrap_config"
 )"
 ```
 
@@ -45,7 +64,8 @@ export TF_VAR_doppler_config="prd"
 export TF_VAR_doppler_bootstrap_config="bootstrap"
 export TF_VAR_bootstrap_state_passphrase="$(
   doppler secrets get BOOTSTRAP_STATE_PASSPHRASE --plain \
-    --project "$TF_VAR_doppler_project" --config "$TF_VAR_doppler_bootstrap_config"
+    -p "$TF_VAR_doppler_project" \
+    -c "$TF_VAR_doppler_bootstrap_config"
 )"
 
 tofu -chdir=infra/bootstrap init -backend=false

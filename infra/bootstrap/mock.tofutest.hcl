@@ -106,6 +106,8 @@ run "plan_mock" {
     github_token                  = "ghp_mock_bootstrap_token_000000000000"
     doppler_management_token      = "dp.st.mock_management_token_000000000000"
     doppler_project               = "queerglobal"
+    doppler_config                = "prd"
+    doppler_bootstrap_config      = "bootstrap"
     production_reviewer_usernames = ["octocat"]
     bootstrap_state_passphrase    = "mock-bootstrap-passphrase"
   }
@@ -137,6 +139,16 @@ run "plan_mock" {
     condition     = github_actions_environment_secret.doppler_token.plaintext_value == doppler_service_token.github_actions_production.key
     error_message = "DOPPLER_TOKEN must reference the Doppler service token key."
   }
+
+  assert {
+    condition     = doppler_service_token.github_actions_production.config == var.doppler_config
+    error_message = "Deploy service token must target doppler_config only."
+  }
+
+  assert {
+    condition     = doppler_service_token.github_actions_production.access == "read"
+    error_message = "Deploy service token must be read-only."
+  }
 }
 
 run "apply_mock" {
@@ -151,6 +163,8 @@ run "apply_mock" {
     github_token                  = "ghp_mock_bootstrap_token_000000000000"
     doppler_management_token      = "dp.st.mock_management_token_000000000000"
     doppler_project               = "queerglobal"
+    doppler_config                = "prd"
+    doppler_bootstrap_config      = "bootstrap"
     production_reviewer_usernames = ["octocat"]
     bootstrap_state_passphrase    = "mock-bootstrap-passphrase"
   }
@@ -174,6 +188,39 @@ run "apply_mock" {
     condition     = github_actions_environment_secret.doppler_token.plaintext_value == doppler_service_token.github_actions_production.key
     error_message = "DOPPLER_TOKEN must reference the Doppler service token key."
   }
+
+  assert {
+    condition     = doppler_service_token.github_actions_production.config == var.doppler_config
+    error_message = "Deploy service token must target doppler_config only."
+  }
+
+  assert {
+    condition     = doppler_service_token.github_actions_production.access == "read"
+    error_message = "Deploy service token must be read-only."
+  }
+}
+
+run "reject_equal_doppler_configs" {
+  command = plan
+
+  plan_options {
+    refresh = false
+  }
+
+  variables {
+    cloudflare_account_id         = "00000000000000000000000000000001"
+    github_token                  = "ghp_mock_bootstrap_token_000000000000"
+    doppler_management_token      = "dp.st.mock_management_token_000000000000"
+    doppler_project               = "queerglobal"
+    doppler_config                = "prd"
+    doppler_bootstrap_config      = "prd"
+    production_reviewer_usernames = ["octocat"]
+    bootstrap_state_passphrase    = "mock-bootstrap-passphrase"
+  }
+
+  expect_failures = [
+    check.doppler_deploy_config_isolated_from_bootstrap,
+  ]
 }
 
 run "reject_short_passphrase" {
@@ -188,6 +235,8 @@ run "reject_short_passphrase" {
     github_token                  = "ghp_mock_bootstrap_token_000000000000"
     doppler_management_token      = "dp.st.mock_management_token_000000000000"
     doppler_project               = "queerglobal"
+    doppler_config                = "prd"
+    doppler_bootstrap_config      = "bootstrap"
     production_reviewer_usernames = ["octocat"]
     bootstrap_state_passphrase    = "short"
   }
