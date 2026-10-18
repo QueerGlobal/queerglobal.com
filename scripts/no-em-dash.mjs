@@ -1,7 +1,17 @@
 #!/usr/bin/env node
 /**
- * Fail when U+2014 (em dash) appears in shipped HTML, CSS, JS, or Markdown.
- * Skips paths under archive/ by default. Reusable in other repos via options.
+ * Em-dash guard for shipped front-end and docs.
+ *
+ * Reusable in other repos: import the functions below or run this file as a CLI.
+ *
+ * @module no-em-dash
+ * @exports {string} EM_DASH - Unicode em dash character (U+2014).
+ * @exports {Set<string>} DEFAULT_EXTENSIONS - File extensions scanned by default.
+ * @exports {Set<string>} DEFAULT_SKIP_DIR_NAMES - Directory names skipped by default.
+ * @exports {findEmDashLocations} findEmDashLocations - Locate em dashes in a string.
+ * @exports {scanForEmDash} scanForEmDash - Walk a tree and collect em-dash hits.
+ * @exports {formatEmDashReport} formatEmDashReport - Human-readable failure report.
+ * @exports {runNoEmDashCheck} runNoEmDashCheck - Scan rootDir; return 0 (ok) or 1 (fail).
  */
 
 import fs from "node:fs";

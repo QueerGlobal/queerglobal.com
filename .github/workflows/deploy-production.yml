@@ -1,0 +1,70 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+concurrency:
+  group: deploy-queerglobal-grandkru-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1
+        with:
+          tofu_version: 1.9.0
+
+      - name: Install Doppler CLI
+        uses: DopplerHQ/cli-action@014df23b1329b615816a38eb5f473bb9000700b1 # v3
+
+      - name: Capture current Worker version
+        run: doppler run -- node scripts/capture-worker-version.mjs .previous-worker-version
+
+      - name: OpenTofu init and apply
+        id: apply
+        run: |
+          doppler run -- bash -ec '
+            test -n "$CLOUDFLARE_API_TOKEN"
+            test -n "$CLOUDFLARE_ACCOUNT_ID"
+            export TF_VAR_cloudflare_account_id="$CLOUDFLARE_ACCOUNT_ID"
+            {
+              echo "bucket = \"$TF_STATE_BUCKET\""
+              echo "key = \"${TF_STATE_KEY:-queerglobal-grandkru/terraform.tfstate}\""
+              echo "region = \"$TF_STATE_REGION\""
+            } > /tmp/backend.hcl
+            tofu -chdir=infra init -backend-config=/tmp/backend.hcl
+            tofu -chdir=infra apply -auto-approve
+          '
+
+      - name: Production smoke test
+        id: smoke
+        run: doppler run -- node scripts/check-production-site.mjs https://queerglobal.grandkru.com
+
+      - name: Roll back Worker on smoke-test failure
+        if: failure() && steps.apply.outcome == 'success' && steps.smoke.outcome == 'failure'
+        run: |
+          if [ -s .previous-worker-version ]; then
+            doppler run -- node scripts/worker-rollback.mjs "$(tr -d '\n' < .previous-worker-version)"
+          else
+            echo "No previous Worker version file; skip rollback."
+          fi

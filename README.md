@@ -26,41 +26,69 @@ npm run dev
 Then open the printed `localhost` URL. You should see the coming-soon page
 with the mission, `info@queerglobal.com`, Project docs, and the app repo.
 
+Optional: set `CLOUDFLARE_ACCOUNT_ID` in the environment when using Wrangler
+against a remote account (local dev usually does not need it).
+
 ## Deploy (Mark, Grand Kru Cloudflare)
 
-No Cloudflare token is in this agent environment, so the custom domain is
-not attached yet. Account `120d0baf442854f3f9b21e237688ae98` already hosts
-other `*.grandkru.com` Workers (`activism`, `nodatacenter`, …).
+Production deploys are automated. After merge to `main`, the
+[Deploy production](.github/workflows/deploy-production.yml) workflow runs in
+the GitHub **production** environment (manual approval required). It uses
+OpenTofu in `infra/` to publish the Worker and attach
+`queerglobal.grandkru.com`, then smoke-tests the live site.
 
-1. From this branch (merge is not required):
+Secrets are not stored in this repository. Configure them in Doppler and sync
+to the GitHub `production` environment (see [infra/README.md](infra/README.md)):
 
-   ```bash
-   npm install
-   npx wrangler deploy
-   ```
+| Secret / variable | Purpose |
+|-------------------|---------|
+| `DOPPLER_TOKEN` | GitHub Actions: fetch config at deploy time |
+| `CLOUDFLARE_API_TOKEN` | OpenTofu provider and rollback API calls |
+| `CLOUDFLARE_ACCOUNT_ID` | Account for Workers and custom domain |
+| `TF_VAR_cloudflare_account_id` | Same value as `CLOUDFLARE_ACCOUNT_ID` for OpenTofu |
+| `TF_STATE_BUCKET`, `TF_STATE_KEY`, `TF_STATE_REGION` | Remote OpenTofu state (S3) |
 
-   Wrangler will publish Worker `queerglobal-grandkru` and, because
-   `custom_domain = true`, create the DNS record + certificate for
-   `queerglobal.grandkru.com` on the `grandkru.com` zone. Do not add a
-   CNAME first: an existing CNAME blocks Custom Domains.
+The Cloudflare account ID and workers.dev subdomain name are intentionally
+omitted from committed files. They may still appear in older git history.
 
-2. Confirm the workers.dev preview from wrangler output (other Workers on
-   this account use `*.mark-120.workers.dev`, so expect something like
-   `https://queerglobal-grandkru.mark-120.workers.dev`).
+### Production smoke test
 
-3. If `wrangler deploy` publishes the Worker but skips the hostname
-   (token lacks zone write, or `queerglobal.grandkru.com` already has a
-   CNAME):
+After each deploy, CI requests `https://queerglobal.grandkru.com` and
+requires:
 
-   - Cloudflare dashboard → Workers & Pages → `queerglobal-grandkru` →
-     Settings → Domains & Routes → Add → Custom Domain →
+- HTTP status **200**
+- HTML containing the document title **`Queer Global: coming soon`**
+
+The same check is implemented in `scripts/check-production-site.mjs` (`npm run
+check:coming-soon`). If the smoke test fails after a successful OpenTofu
+apply, the workflow rolls back the Worker to the version captured immediately
+before deploy.
+
+### Operator notes
+
+1. **OpenTofu** creates the Worker (static assets from `public/`) and the
+   `queerglobal.grandkru.com` custom domain on the `grandkru.com` zone. Do
+   not add a conflicting CNAME for `queerglobal` before apply: an existing
+   CNAME blocks Custom Domains.
+
+2. Confirm the workers.dev preview URL printed by Wrangler or shown in the
+   Cloudflare dashboard (Workers and Pages, then your Worker, then the
+   workers.dev subdomain shown for the account).
+
+3. If apply succeeds but the hostname is missing (token lacks zone write, or
+   a leftover CNAME exists):
+
+   - Cloudflare dashboard: Workers and Pages, then `queerglobal-grandkru`, then
+     Settings, then Domains and Routes, then Add, then Custom Domain, then
      `queerglobal.grandkru.com`
-   - If a leftover CNAME exists on `queerglobal` in the `grandkru.com`
-     zone, delete it first, then add the Custom Domain so Cloudflare can
-     create the record.
+   - If a leftover CNAME exists on `queerglobal` in the `grandkru.com` zone,
+     delete it first, then add the Custom Domain so Cloudflare can create the
+     record.
 
 4. Do **not** point `queerglobal.com` or `www.queerglobal.com` at this
    Worker. Do **not** add `/queerglobal` on `activism-grandkru-hub`.
+
+Break-glass manual apply (when CI is unavailable): see [infra/README.md](infra/README.md).
 
 ## Later
 
