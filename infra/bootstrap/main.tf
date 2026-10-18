@@ -125,12 +125,19 @@ resource "github_repository_environment_deployment_policy" "production_main" {
   branch_pattern = "main"
 }
 
-# Scoped to var.doppler_config only (validated != doppler_bootstrap_config). access is read.
+# Scoped to var.doppler_config only; precondition blocks equal doppler_bootstrap_config. access is read.
 resource "doppler_service_token" "github_actions_production" {
   project = var.doppler_project
   config  = var.doppler_config
   name    = "github-actions-${var.production_environment_name}"
   access  = "read"
+
+  lifecycle {
+    precondition {
+      condition     = var.doppler_config != var.doppler_bootstrap_config
+      error_message = "doppler_config and doppler_bootstrap_config must differ so the deploy service token cannot target bootstrap secrets."
+    }
+  }
 }
 
 resource "github_actions_environment_secret" "doppler_token" {

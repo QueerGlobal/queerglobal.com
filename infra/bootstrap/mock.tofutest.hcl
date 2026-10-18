@@ -219,7 +219,7 @@ run "reject_equal_doppler_configs" {
   }
 
   expect_failures = [
-    check.doppler_deploy_config_isolated_from_bootstrap,
+    doppler_service_token.github_actions_production,
   ]
 }
 

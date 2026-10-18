@@ -32,7 +32,7 @@ doppler secrets set BOOTSTRAP_STATE_PASSPHRASE="$(openssl rand -base64 24)" \
   -c "$TF_VAR_doppler_bootstrap_config"
 ```
 
-OpenTofu rejects `doppler_config == doppler_bootstrap_config` so the GitHub Actions service token cannot be pointed at the bootstrap config.
+Bootstrap apply fails if `doppler_config == doppler_bootstrap_config` (precondition on the deploy service token) so GitHub Actions cannot receive a token scoped to bootstrap secrets.
 
 ## State encryption and passphrase
 
