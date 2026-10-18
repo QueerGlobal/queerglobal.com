@@ -71,8 +71,11 @@ export function bootstrapStandInFetch() {
     }
     if (pathStr.includes("/zones?")) {
       const query = new URL(pathStr).searchParams;
-      if (query.get("account.id") !== ACCOUNT_ID || query.get("name") !== "grandkru.com") {
-        throw new Error(`bootstrap stand-in fetch: zone lookup must filter by name and account.id: ${pathStr}`);
+      if (query.get("name") !== "grandkru.com") {
+        throw new Error(`bootstrap stand-in fetch: zone lookup must filter by name: ${pathStr}`);
+      }
+      if (query.has("account.id") && query.get("account.id") !== ACCOUNT_ID) {
+        throw new Error(`bootstrap stand-in fetch: zone lookup account.id mismatch: ${pathStr}`);
       }
       return {
         ok: true,

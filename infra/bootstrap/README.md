@@ -52,14 +52,11 @@ Everything else is committed config or generated in code: production reviewers l
 
 ## Read-only preflight (before any Doppler or OpenTofu write)
 
-Export project slugs, then verify tokens (read-only checks only):
+Doppler project and config slugs live in **`bootstrap-project.auto.tfvars.json`** (OpenTofu auto-loads it). Preflight derives **`TF_VAR_cloudflare_account_id`** from the bootstrap Cloudflare token via a read-only zone lookup; you do not type account id or Doppler slugs at run time.
+
+Verify tokens (read-only checks only):
 
 ```bash
-export TF_VAR_doppler_project="your-project"
-export TF_VAR_doppler_config="prd"
-export TF_VAR_doppler_bootstrap_config="bootstrap"
-export TF_VAR_cloudflare_account_id="..."
-
 read -rs CLOUDFLARE_API_TOKEN
 echo
 export CLOUDFLARE_API_TOKEN

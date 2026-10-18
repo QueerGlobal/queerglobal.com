@@ -3,6 +3,8 @@
 set -euo pipefail
 
 dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=scripts/bootstrap-committed-env.sh
+. "$dir/scripts/bootstrap-committed-env.sh"
 # Always the bootstrap stack next to this script. There is no override: a
 # redirected directory would apply a different root module with real credentials
 # and back its state up over the real bootstrap state in Doppler.

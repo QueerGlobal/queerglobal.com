@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runBootstrapCli } from "./bootstrap-error-report.mjs";
+import { cloudflareAccountIdFromToken } from "./lib/cloudflare-account-from-token.mjs";
 import { cloudflareBearerGet } from "./lib/cloudflare-github-api.mjs";
 
 const ACCOUNT_API_TOKENS_WRITE = "Account API Tokens Write";
@@ -214,7 +215,7 @@ export async function cloudflareProbeZoneOnAccount(input) {
  */
 export async function preflightBootstrapCloudflare(options) {
   const token = options.token ?? process.env.CLOUDFLARE_API_TOKEN;
-  const accountId = options.accountId ?? process.env.TF_VAR_cloudflare_account_id;
+  let accountId = options.accountId ?? process.env.TF_VAR_cloudflare_account_id ?? "";
   const zoneName = options.zoneName ?? "grandkru.com";
   const fetchImpl = options.fetchImpl ?? fetch;
 
@@ -222,7 +223,12 @@ export async function preflightBootstrapCloudflare(options) {
     return { ok: false, error: "CLOUDFLARE_API_TOKEN is required." };
   }
   if (!accountId) {
-    return { ok: false, error: "TF_VAR_cloudflare_account_id is required." };
+    const derived = await cloudflareAccountIdFromToken({ token, zoneName, fetchImpl });
+    if (!derived.ok) {
+      return derived;
+    }
+    accountId = derived.accountId;
+    process.env.TF_VAR_cloudflare_account_id = accountId;
   }
 
   const verify = await cloudflareVerifyActiveToken({ token, accountId, fetchImpl });

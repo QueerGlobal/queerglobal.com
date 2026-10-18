@@ -2,6 +2,9 @@
 # Re-encrypt bootstrap state with a new passphrase (TF_ENCRYPTION two-hop rotation).
 set -euo pipefail
 
+# shellcheck source=scripts/bootstrap-committed-env.sh
+. "$(cd "$(dirname "$0")/.." && pwd)/scripts/bootstrap-committed-env.sh"
+
 dir="${1:-infra/bootstrap}"
 
 on_err() {

@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { runBootstrapCli } from "./bootstrap-error-report.mjs";
+import { bootstrapProjectTfVarEnv } from "./lib/bootstrap-project.mjs";
 import { loadProductionReviewerUsernames } from "./lib/bootstrap-reviewers.mjs";
 import { githubBearerRequest } from "./lib/cloudflare-github-api.mjs";
 import { preflightBootstrapCloudflare } from "./preflight-bootstrap-cloudflare.mjs";
@@ -163,6 +164,7 @@ export async function preflightBootstrapDopplerIsolation(options = {}) {
 export async function runPreflightBootstrapCli(options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const repoRoot = options.repoRoot ?? process.cwd();
+  Object.assign(process.env, bootstrapProjectTfVarEnv(repoRoot));
   let reviewers;
   try {
     reviewers = options.reviewers ?? loadProductionReviewerUsernames(repoRoot);
