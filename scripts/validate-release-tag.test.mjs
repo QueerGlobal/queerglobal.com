@@ -53,26 +53,30 @@ describe("verifyReleaseTag rollback guards", () => {
   it("refuses when the tag commit is not an ancestor of main", () => {
     const repo = mkdtempTracked("release-tag-git-");
     try {
-      execFileSync("git", ["init", "-q"], { cwd: repo });
-      execFileSync("git", ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "--allow-empty", "-q", "-m", "main"], {
+      execFileSync("git", ["init", "-q"], { cwd: repo, env: { ...process.env, HOME: repo, GIT_CONFIG_NOSYSTEM: "1" } });
+      execFileSync("git", ["config", "user.email", "t@t"], { cwd: repo, env: { HOME: repo, GIT_CONFIG_NOSYSTEM: "1" } });
+      execFileSync("git", ["config", "user.name", "t"], { cwd: repo, env: { HOME: repo, GIT_CONFIG_NOSYSTEM: "1" } });
+      const gitEnv = { ...process.env, HOME: repo, GIT_CONFIG_NOSYSTEM: "1" };
+      execFileSync("git", ["commit", "--allow-empty", "-q", "-m", "main"], {
         cwd: repo,
+        env: gitEnv,
       });
-      const mainSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
-      execFileSync("git", ["branch", "-M", "main"], { cwd: repo });
-      execFileSync("git", ["checkout", "-q", "-b", "side"], { cwd: repo });
-      execFileSync("git", ["commit", "--allow-empty", "-q", "-m", "side"], { cwd: repo });
-      const sideSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8" }).trim();
+      const mainSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8", env: gitEnv }).trim();
+      execFileSync("git", ["branch", "-M", "main"], { cwd: repo, env: gitEnv });
+      execFileSync("git", ["checkout", "-q", "-b", "side"], { cwd: repo, env: gitEnv });
+      execFileSync("git", ["commit", "--allow-empty", "-q", "-m", "side"], { cwd: repo, env: gitEnv });
+      const sideSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repo, encoding: "utf8", env: gitEnv }).trim();
       const tag = `release/9-${sideSha}`;
-      execFileSync("git", ["tag", tag], { cwd: repo });
-      const execGit = (args) => execFileSync("git", args, { cwd: repo, encoding: "utf8" });
+      execFileSync("git", ["tag", tag], { cwd: repo, env: gitEnv });
+      const execGit = (args) => execFileSync("git", args, { cwd: repo, encoding: "utf8", env: gitEnv });
       verifyReleaseTagPointsAtEmbeddedSha({ tag, execGit });
       assert.throws(
         () => verifyReleaseTagIsAncestorOfMain({ tag, execGit, mainRef: "refs/heads/main" }),
         /not an ancestor/,
       );
-      execFileSync("git", ["checkout", "-q", "main"], { cwd: repo });
+      execFileSync("git", ["checkout", "-q", "main"], { cwd: repo, env: gitEnv });
       const mainTag = `release/2-${mainSha}`;
-      execFileSync("git", ["tag", mainTag], { cwd: repo });
+      execFileSync("git", ["tag", mainTag], { cwd: repo, env: gitEnv });
       verifyReleaseTagIsAncestorOfMain({ tag: mainTag, execGit, mainRef: "refs/heads/main" });
     } finally {
       rmTracked(repo);

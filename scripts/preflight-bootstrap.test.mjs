@@ -53,10 +53,9 @@ describe("preflightBootstrapDopplerProject", () => {
 
 describe("e2e preflight helper marker", () => {
   it("writes a marker file only after the real preflight passes", async () => {
-    const marker = path.join(
-      await fs.mkdtemp(path.join(os.tmpdir(), "preflight-marker-")),
-      "ok",
-    );
+    const { mkdtempTracked, rmTracked } = await import("./test-helpers/test-temp.mjs");
+    const markerDir = mkdtempTracked("preflight-marker-");
+    const marker = path.join(markerDir, "ok");
     process.env.CLOUDFLARE_API_TOKEN = "cf-test-token";
     process.env.TF_VAR_cloudflare_account_id = "0123456789abcdef0123456789abcdef";
     process.env.TF_VAR_github_token = "ghp_test";
@@ -66,5 +65,6 @@ describe("e2e preflight helper marker", () => {
     assert.equal(code, 0);
     const contents = await fs.readFile(marker, "utf8");
     assert.ok(contents.length > 0);
+    rmTracked(markerDir);
   });
 });

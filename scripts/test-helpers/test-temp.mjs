@@ -57,6 +57,8 @@ export const TEST_TMPDIR_ARTIFACT = [
   /^promote-/,
   /^capture-worker-/,
   /^cleanup-gate-/,
+  /^preflight-marker-/,
+  /^tmp\./,
 ];
 
 /**
