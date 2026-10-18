@@ -13,10 +13,9 @@ config="${TF_VAR_doppler_bootstrap_config:-bootstrap}"
 first_run="${BOOTSTRAP_FIRST_RUN:-}"
 pass_file=""
 
+get_err=""
 cleanup() {
-  if [ -n "$pass_file" ] && [ -f "$pass_file" ]; then
-    rm -f "$pass_file"
-  fi
+  rm -f "${pass_file:-}" "${get_err:-}"
 }
 _sourced=0
 if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
@@ -45,22 +44,25 @@ else
 fi
 if [ -s "$pass_file" ]; then
   :
-elif [ "$first_run" = "1" ] && node "$dir/scripts/lib/doppler-secret-missing.mjs" "$get_err" "$get_code"; then
+elif [ "$first_run" = "1" ] && node "$dir/scripts/lib/doppler-secret-missing.mjs" "$get_err" "$get_code" BOOTSTRAP_STATE_PASSPHRASE; then
   node "$dir/scripts/bootstrap-generate-passphrase.mjs" | doppler secrets set BOOTSTRAP_STATE_PASSPHRASE -p "$project" -c "$config"
   doppler secrets get BOOTSTRAP_STATE_PASSPHRASE --plain -p "$project" -c "$config" >"$pass_file"
 elif [ "$first_run" = "1" ]; then
   cat "$get_err" >&2
   echo "Refusing to generate BOOTSTRAP_STATE_PASSPHRASE: Doppler get failed for a reason other than a missing secret." >&2
+  cleanup
   exit 1
 else
   cat "$get_err" >&2
   echo "BOOTSTRAP_STATE_PASSPHRASE is missing in Doppler ($project/$config); set BOOTSTRAP_FIRST_RUN=1 for a new bootstrap." >&2
+  cleanup
   exit 1
 fi
 rm -f "$get_err"
 
 if [ ! -s "$pass_file" ]; then
   echo "Bootstrap state passphrase in Doppler is empty." >&2
+  cleanup
   exit 1
 fi
 

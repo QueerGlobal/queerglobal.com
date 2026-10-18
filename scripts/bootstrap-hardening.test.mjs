@@ -177,7 +177,7 @@ describe("bootstrap-tofu-apply.sh", () => {
     const work = bootstrapTree((root) =>
       fs.writeFileSync(path.join(root, "infra", "bootstrap", "terraform.tfstate"), '{"encrypted":true}'),
     );
-    const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`);
+    const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *bootstrap-export-committed-env.mjs*) exec "${process.execPath}" "$@" ;; *) exit 1 ;; esac`);
     const tofu = stubBin("tofu", "exit 0");
     const doppler = stubBin(
       "doppler",
@@ -208,7 +208,7 @@ exit 0`,
       fs.writeFileSync(path.join(root, "infra", "bootstrap", "terraform.tfstate"), '{"partial":true}'),
     );
     const backupLog = path.join(work, "backup.log");
-    const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`);
+    const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *bootstrap-export-committed-env.mjs*) exec "${process.execPath}" "$@" ;; *) exit 1 ;; esac`);
     const tofu = stubBin(
       "tofu",
       `case "$*" in
@@ -238,7 +238,7 @@ esac`,
       fs.writeFileSync(path.join(root, "infra", "bootstrap", "terraform.tfstate"), '{"partial":true}'),
     );
     const events = path.join(work, "events.log");
-    const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`);
+    const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *bootstrap-export-committed-env.mjs*) exec "${process.execPath}" "$@" ;; *) exit 1 ;; esac`);
     const tofu = stubBin("tofu", "exit 0");
     const doppler = stubBin(
       "doppler",
@@ -275,7 +275,7 @@ exit 0`,
     const tofu = stubBin("tofu", `echo "$*" >> "${log}"; exit 0`);
     const node = stubBin(
       "node",
-      `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`,
+      `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *bootstrap-export-committed-env.mjs*) exec "${process.execPath}" "$@" ;; *) exit 1 ;; esac`,
     );
     const nodeBin = path.dirname(process.execPath);
     const env = {
@@ -313,7 +313,7 @@ exit 0`,
     const log = path.join(work, "tofu.log");
     const backup = path.join(work, "backup.log");
     const tofu = stubBin("tofu", `echo "$*" >> "${log}"; exit 0`);
-    const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *) exit 1 ;; esac`);
+    const node = stubBin("node", `case "$*" in *preflight-bootstrap.mjs*) exit 0 ;; *bootstrap-export-committed-env.mjs*) exec "${process.execPath}" "$@" ;; *) exit 1 ;; esac`);
     const doppler = dopplerBootstrapStub({ backupLog: backup });
     const nodeBin = path.dirname(process.execPath);
     const r = spawnSync("bash", ["scripts/bootstrap-tofu-apply.sh"], {

@@ -4,13 +4,14 @@
  * @module lib/cloudflare-account-from-token
  */
 
-import { cloudflareBearerGet } from "./cloudflare-github-api.mjs";
+import { cloudflareBearerRequest } from "./cloudflare-github-api.mjs";
 
 /**
  * @param {{
  *   token: string,
  *   zoneName?: string,
  *   fetchImpl?: typeof fetch,
+ *   timeoutMs?: number,
  * }} input
  * @returns {Promise<{ ok: true, accountId: string } | { ok: false, error: string }>}
  */
@@ -21,12 +22,19 @@ export async function cloudflareAccountIdFromToken(input) {
     return { ok: false, error: "CLOUDFLARE_API_TOKEN is required." };
   }
 
-  const response = await cloudflareBearerGet(
-    `/zones?name=${encodeURIComponent(zoneName)}`,
-    input.token,
-    fetchImpl,
-  );
-  const body = await response.json().catch(() => ({}));
+  const timeoutMs = input.timeoutMs ?? 15_000;
+  let response;
+  let body;
+  try {
+    response = await cloudflareBearerRequest(`/zones?name=${encodeURIComponent(zoneName)}`, input.token, fetchImpl, {
+      method: "GET",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    body = await response.json().catch(() => ({}));
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: `Cloudflare zone lookup for ${zoneName} failed: ${reason}` };
+  }
   if (!response.ok) {
     const message = body.errors?.[0]?.message ?? body.message ?? response.statusText;
     return { ok: false, error: `Cloudflare zone lookup failed for ${zoneName}: ${message}` };

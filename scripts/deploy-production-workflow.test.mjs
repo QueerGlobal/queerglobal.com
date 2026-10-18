@@ -136,6 +136,15 @@ describe("deploy-production manual jobs and gating", () => {
     assert.match(yaml, /Skips the push test job: release tags are created only after deploy smoke and recheck passed/);
   });
 
+  it("verifies the release tag commit is on main before checking the tag out", () => {
+    const redeploy = extractJobBlock(yaml, "redeploy_release_tag");
+    const verifyIdx = stepIndex(redeploy, "Verify release tag commit is on main");
+    const tagCheckoutIdx = stepIndex(redeploy, "Checkout release tag");
+    assert.ok(verifyIdx >= 0 && verifyIdx < tagCheckoutIdx, "tag must be verified before it is checked out");
+    assert.match(redeploy, /node scripts\/validate-release-tag\.mjs --verify-on-main "\$ROLLBACK_RELEASE_TAG"/);
+    assert.match(redeploy, /fetch-depth: 0/);
+  });
+
   it("plans before applying infra in deploy and redeploy jobs", () => {
     const deploy = extractJobBlock(yaml, "deploy");
     const redeploy = extractJobBlock(yaml, "redeploy_release_tag");

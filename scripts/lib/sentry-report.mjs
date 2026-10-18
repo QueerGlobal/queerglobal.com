@@ -128,13 +128,6 @@ export function createErrorReporter(options = {}) {
         return;
       }
       try {
-        logStructured({
-          event: "sentry_report",
-          component,
-          ok: false,
-          message,
-          reported: true,
-        });
         await capture(err instanceof Error ? new Error(message) : new Error(message));
         logStructured({
           event: "sentry_report",

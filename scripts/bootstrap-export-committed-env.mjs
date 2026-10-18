@@ -19,14 +19,17 @@ function shellQuote(value) {
 }
 
 /**
+ * @param {string[]} [argv]
+ * @param {{ fetchImpl?: typeof fetch, timeoutMs?: number }} [options]
  * @returns {Promise<number>}
  */
-export async function runBootstrapExportCommittedEnvCli() {
+export async function runBootstrapExportCommittedEnvCli(argv = process.argv.slice(2), options = {}) {
   const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
   const env = bootstrapProjectTfVarEnv(repoRoot);
+  const slugsOnly = argv.includes("--slugs-only");
   const token = process.env.CLOUDFLARE_API_TOKEN ?? "";
-  if (token) {
-    const derived = await cloudflareAccountIdFromToken({ token });
+  if (token && !slugsOnly) {
+    const derived = await cloudflareAccountIdFromToken({ token, ...options });
     if (!derived.ok) {
       console.error(derived.error);
       return 1;
@@ -44,6 +47,8 @@ if (
   process.argv[1] !== undefined &&
   path.resolve(process.argv[1]) === path.resolve(thisFile)
 ) {
+  // Fail unless the export finishes: an unsettled request must not exit 0 with no output.
+  process.exitCode = 1;
   runBootstrapExportCommittedEnvCli()
     .then((code) => {
       process.exitCode = code;

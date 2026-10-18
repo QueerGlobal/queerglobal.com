@@ -48,6 +48,8 @@ apply_ci_plan() {
     exit 1
   fi
   tmp=$(mktemp -d)
+  apply_tmp="$tmp"
+  trap 'rm -rf "${apply_tmp:-}"' EXIT
   {
     echo "bucket = \"$TF_STATE_BUCKET\""
     echo "key = \"${TF_STATE_KEY:-queerglobal-grandkru/terraform.tfstate}\""

@@ -28,8 +28,15 @@ describe("sentry-report", () => {
       .split("\n")
       .filter((l) => l.startsWith("{"))
       .map((l) => JSON.parse(l));
-    assert.ok(parsed.some((p) => p.event === "sentry_report" && p.component === "test-component"));
-    assert.ok(parsed.some((p) => p.reported === true && p.ok === true));
+    assert.equal(parsed.length, 1, "expected exactly one JSON line per failure");
+    assert.deepEqual(parsed[0], {
+      event: "sentry_report",
+      component: "test-component",
+      ok: true,
+      message: "structured test",
+      reported: true,
+      flushed: true,
+    });
   });
 
   it("logs a structured line with reported false when SENTRY_DSN is unset", async () => {
@@ -79,5 +86,37 @@ describe("sentry-report", () => {
     assert.equal(r.error, undefined, "report-cli-failure hung until the test timeout");
     assert.equal(r.status, 0, r.stderr);
     assert.ok(Date.now() - started < 15_000, "reporting must not block a failing step");
+  });
+
+  it("logs exactly one line when the Sentry capture itself fails", async () => {
+    const lines = [];
+    const orig = process.stderr.write;
+    process.stderr.write = (chunk) => {
+      lines.push(String(chunk));
+      return true;
+    };
+    try {
+      const reporter = createErrorReporter({
+        dsn: "http://127.0.0.1:9/1",
+        component: "capture-fails",
+        capture: async () => {
+          throw new Error("sentry unreachable");
+        },
+      });
+      await reporter.report(new Error("original failure"));
+    } finally {
+      process.stderr.write = orig;
+    }
+    const parsed = lines
+      .join("")
+      .trim()
+      .split("\n")
+      .filter((l) => l.startsWith("{"))
+      .map((l) => JSON.parse(l));
+    assert.equal(parsed.length, 1, "expected exactly one JSON line per failure");
+    assert.equal(parsed[0].component, "capture-fails");
+    assert.equal(parsed[0].ok, false);
+    assert.equal(parsed[0].reported, false);
+    assert.equal(parsed[0].captureFailed, true);
   });
 });
