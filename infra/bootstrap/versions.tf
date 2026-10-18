@@ -1,8 +1,28 @@
 terraform {
-  required_version = ">= 1.6.0"
+  required_version = ">= 1.7.0"
 
   # Local state only (terraform.tfstate in this directory). Do not store bootstrap
   # state in the R2 bucket this stack creates.
+
+  encryption {
+    key_provider "pbkdf2" "bootstrap" {
+      passphrase = var.bootstrap_state_passphrase
+    }
+
+    method "aes_gcm" "bootstrap" {
+      keys = key_provider.pbkdf2.bootstrap
+    }
+
+    state {
+      method   = method.aes_gcm.bootstrap
+      enforced = true
+    }
+
+    plan {
+      method   = method.aes_gcm.bootstrap
+      enforced = true
+    }
+  }
 
   required_providers {
     cloudflare = {

@@ -67,6 +67,18 @@ variable "tf_state_object_key" {
   default     = "queerglobal-grandkru/terraform.tfstate"
 }
 
+variable "zone_name" {
+  type        = string
+  description = "Cloudflare zone for Workers custom domains (deploy token zone scope)."
+  default     = "grandkru.com"
+}
+
+variable "bootstrap_state_passphrase" {
+  type        = string
+  sensitive   = true
+  description = "Encrypts local bootstrap state (min 16 characters). TF_VAR_bootstrap_state_passphrase from Doppler; never commit."
+}
+
 variable "tf_state_bucket_name" {
   type        = string
   description = "R2 bucket name for OpenTofu remote state."

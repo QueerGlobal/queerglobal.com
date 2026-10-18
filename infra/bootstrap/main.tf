@@ -1,3 +1,9 @@
+data "cloudflare_zone" "grandkru" {
+  filter = {
+    name = var.zone_name
+  }
+}
+
 data "cloudflare_account_api_token_permission_groups_list" "r2_bucket_item_read" {
   account_id = var.cloudflare_account_id
   name       = "Workers R2 Storage Bucket Item Read"
@@ -31,6 +37,7 @@ data "cloudflare_account_api_token_permission_groups_list" "dns_write" {
 locals {
   r2_bucket_resource      = "com.cloudflare.edge.r2.bucket.${var.cloudflare_account_id}_default_${var.tf_state_bucket_name}"
   deploy_account_resource = "com.cloudflare.api.account.${var.cloudflare_account_id}"
+  deploy_zone_resource    = "com.cloudflare.api.account.zone.${data.cloudflare_zone.grandkru.id}"
   tf_state_endpoint       = "https://${var.cloudflare_account_id}.r2.cloudflarestorage.com"
   r2_secret_access_key    = sha256(cloudflare_account_token.tf_state_r2.value)
 }
@@ -60,18 +67,28 @@ resource "cloudflare_account_token" "deploy_workers" {
   name       = var.deploy_api_token_name
   account_id = var.cloudflare_account_id
 
-  policies = [{
-    effect = "allow"
-    permission_groups = [
-      { id = data.cloudflare_account_api_token_permission_groups_list.workers_scripts_write.result[0].id },
-      { id = data.cloudflare_account_api_token_permission_groups_list.workers_routes_write.result[0].id },
-      { id = data.cloudflare_account_api_token_permission_groups_list.zone_read.result[0].id },
-      { id = data.cloudflare_account_api_token_permission_groups_list.dns_write.result[0].id },
-    ]
-    resources = jsonencode({
-      (local.deploy_account_resource) = "*"
-    })
-  }]
+  policies = [
+    {
+      effect = "allow"
+      permission_groups = [
+        { id = data.cloudflare_account_api_token_permission_groups_list.workers_scripts_write.result[0].id },
+      ]
+      resources = jsonencode({
+        (local.deploy_account_resource) = "*"
+      })
+    },
+    {
+      effect = "allow"
+      permission_groups = [
+        { id = data.cloudflare_account_api_token_permission_groups_list.workers_routes_write.result[0].id },
+        { id = data.cloudflare_account_api_token_permission_groups_list.zone_read.result[0].id },
+        { id = data.cloudflare_account_api_token_permission_groups_list.dns_write.result[0].id },
+      ]
+      resources = jsonencode({
+        (local.deploy_zone_resource) = "*"
+      })
+    },
+  ]
 }
 
 resource "github_repository_environment" "production" {
@@ -83,9 +100,15 @@ resource "github_repository_environment" "production" {
   }
 
   deployment_branch_policy {
-    protected_branches     = true
-    custom_branch_policies = false
+    protected_branches     = false
+    custom_branch_policies = true
   }
+}
+
+resource "github_repository_environment_deployment_policy" "production_main" {
+  repository     = var.github_repository
+  environment    = github_repository_environment.production.environment
+  branch_pattern = "main"
 }
 
 resource "github_actions_environment_secret" "doppler_token" {

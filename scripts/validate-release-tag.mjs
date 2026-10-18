@@ -1,6 +1,9 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+/** Matches tags created by deploy-production (release/<run>-<full sha>). */
+export const RELEASE_TAG_PATTERN = /^release\/[0-9]+-[0-9a-f]{40}$/;
+
 /**
  * @param {string} tag
  * @returns {string}
@@ -9,13 +12,20 @@ export function assertValidReleaseTag(tag) {
   if (!tag || typeof tag !== "string") {
     throw new Error("Release tag is required.");
   }
-  if (!tag.startsWith("release/")) {
-    throw new Error(`Release tag must start with release/: ${JSON.stringify(tag)}`);
-  }
-  if (/\s|\.\./.test(tag)) {
-    throw new Error(`Release tag contains invalid characters: ${JSON.stringify(tag)}`);
+  if (!RELEASE_TAG_PATTERN.test(tag)) {
+    throw new Error(
+      `Release tag must match ${RELEASE_TAG_PATTERN}: ${JSON.stringify(tag)}`,
+    );
   }
   return tag;
+}
+
+/**
+ * @param {string} tag
+ * @returns {string}
+ */
+export function releaseTagGitRef(tag) {
+  return `refs/tags/${assertValidReleaseTag(tag)}`;
 }
 
 /**

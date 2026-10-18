@@ -3,80 +3,71 @@ import { describe, it } from "node:test";
 
 import {
   countRequiredReviewersFromProtectionRules,
-  environmentDeploysFromMainOnly,
+  deploymentBranchPoliciesAllowMainOnly,
+  environmentUsesCustomBranchPolicies,
   verifyProductionEnvironmentProtected,
 } from "./verify-production-environment.mjs";
 
-/** Shape returned by GET /repos/{owner}/{repo}/environments/{environment_name} */
 const githubProductionEnvironment = {
   id: 12345678,
-  node_id: "ENVR_kwDOABC1234",
   name: "production",
-  url: "https://api.github.com/repos/QueerGlobal/queerglobal.com/environments/production",
-  html_url: "https://github.com/QueerGlobal/queerglobal.com/settings/environments",
-  created_at: "2024-01-01T00:00:00Z",
-  updated_at: "2024-01-01T00:00:00Z",
-  can_admins_bypass: true,
   protection_rules: [
     {
       id: 990,
-      node_id: "ENVRPROTECTION_kwDOABC1234",
       type: "required_reviewers",
       prevent_self_review: false,
       reviewers: [
         {
           type: "User",
-          reviewer: {
-            login: "octocat",
-            id: 1,
-            node_id: "MDQ6VXNlcjE=",
-            avatar_url: "https://github.com/images/error/octocat_happy.gif",
-            html_url: "https://github.com/octocat",
-            gravatar_id: "",
-            type: "User",
-            site_admin: false,
-          },
+          reviewer: { login: "octocat", id: 1 },
         },
       ],
     },
   ],
   deployment_branch_policy: {
-    protected_branches: true,
-    custom_branch_policies: false,
+    protected_branches: false,
+    custom_branch_policies: true,
   },
 };
 
-describe("countRequiredReviewersFromProtectionRules", () => {
-  it("counts reviewers on required_reviewers protection rules", () => {
-    assert.equal(countRequiredReviewersFromProtectionRules(githubProductionEnvironment), 1);
+const githubDeploymentBranchPolicies = {
+  total_count: 1,
+  branch_policies: [
+    {
+      id: 664093354,
+      node_id: "DEPLOYMENT_BRANCH_POLICY_kwDOI1E",
+      name: "main",
+      type: "branch",
+    },
+  ],
+};
+
+describe("environmentUsesCustomBranchPolicies", () => {
+  it("requires custom branch policies with protected_branches disabled", () => {
+    assert.equal(environmentUsesCustomBranchPolicies(githubProductionEnvironment), true);
   });
 });
 
-describe("environmentDeploysFromMainOnly", () => {
-  it("accepts protected default branch policy", () => {
-    assert.equal(environmentDeploysFromMainOnly(githubProductionEnvironment), true);
-  });
-
-  it("accepts explicit custom main branch policy", () => {
-    assert.equal(
-      environmentDeploysFromMainOnly({
-        deployment_branch_policy: {
-          protected_branches: false,
-          custom_branch_policies: true,
-          custom_branch_policy_names: ["main"],
-        },
-      }),
-      true,
-    );
+describe("deploymentBranchPoliciesAllowMainOnly", () => {
+  it("accepts a single branch policy named main", () => {
+    assert.equal(deploymentBranchPoliciesAllowMainOnly(githubDeploymentBranchPolicies), true);
   });
 });
 
 describe("verifyProductionEnvironmentProtected", () => {
-  it("passes with GitHub environment API shape", async () => {
-    const fetchImpl = async () => ({
-      ok: true,
-      json: async () => githubProductionEnvironment,
-    });
+  it("passes with GitHub environment and deployment-branch-policies API shapes", async () => {
+    const fetchImpl = async (url) => {
+      if (String(url).includes("deployment-branch-policies")) {
+        return {
+          ok: true,
+          json: async () => githubDeploymentBranchPolicies,
+        };
+      }
+      return {
+        ok: true,
+        json: async () => githubProductionEnvironment,
+      };
+    };
     const result = await verifyProductionEnvironmentProtected({
       owner: "QueerGlobal",
       repo: "queerglobal.com",
@@ -87,14 +78,22 @@ describe("verifyProductionEnvironmentProtected", () => {
     assert.equal(result.mainOnlyDeploy, true);
   });
 
-  it("throws when protection_rules has no required reviewers", async () => {
-    const fetchImpl = async () => ({
-      ok: true,
-      json: async () => ({
-        ...githubProductionEnvironment,
-        protection_rules: [],
-      }),
-    });
+  it("throws when deployment branch policies are not main-only", async () => {
+    const fetchImpl = async (url) => {
+      if (String(url).includes("deployment-branch-policies")) {
+        return {
+          ok: true,
+          json: async () => ({
+            total_count: 1,
+            branch_policies: [{ name: "develop", type: "branch" }],
+          }),
+        };
+      }
+      return {
+        ok: true,
+        json: async () => githubProductionEnvironment,
+      };
+    };
     await assert.rejects(
       () =>
         verifyProductionEnvironmentProtected({
@@ -103,7 +102,13 @@ describe("verifyProductionEnvironmentProtected", () => {
           token: "token",
           fetchImpl,
         }),
-      /no required reviewers/,
+      /exactly one branch deployment policy named main/,
     );
+  });
+});
+
+describe("countRequiredReviewersFromProtectionRules", () => {
+  it("counts reviewers on required_reviewers protection rules", () => {
+    assert.equal(countRequiredReviewersFromProtectionRules(githubProductionEnvironment), 1);
   });
 });

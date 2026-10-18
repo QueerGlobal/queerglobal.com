@@ -188,6 +188,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify production environment is protected
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/verify-production-environment.mjs
+
       - name: Install Doppler CLI
         uses: DopplerHQ/cli-action@014df23b1329b615816a38eb5f473bb9000700b1 # v3
 
@@ -216,7 +221,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-          ref: ${{ inputs.rollback_release_tag }}
+          ref: refs/tags/${{ inputs.rollback_release_tag }}
 
       - name: Verify production environment is protected
         env:
