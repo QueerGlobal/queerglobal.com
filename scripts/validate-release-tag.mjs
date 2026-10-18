@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -29,12 +30,74 @@ export function releaseTagGitRef(tag) {
 }
 
 /**
+ * @param {string} tag
+ * @returns {string}
+ */
+export function releaseTagEmbeddedSha(tag) {
+  const valid = assertValidReleaseTag(tag);
+  const sha = valid.slice(valid.lastIndexOf("-") + 1);
+  if (!/^[0-9a-f]{40}$/.test(sha)) {
+    throw new Error(`Release tag embeds an invalid commit sha: ${JSON.stringify(tag)}`);
+  }
+  return sha;
+}
+
+/**
+ * @param {{
+ *   tag: string,
+ *   mainRef?: string,
+ *   execGit?: (args: string[]) => string,
+ * }} input
+ */
+export function verifyReleaseTagPointsAtEmbeddedSha(input) {
+  const tag = assertValidReleaseTag(input.tag);
+  const embedded = releaseTagEmbeddedSha(tag);
+  const execGit =
+    input.execGit ??
+    ((args) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+  const tagCommit = execGit(["rev-parse", `${releaseTagGitRef(tag)}^{commit}`]).trim();
+  if (tagCommit !== embedded) {
+    throw new Error(
+      `Release tag ${JSON.stringify(tag)} points at ${tagCommit} but embeds ${embedded}.`,
+    );
+  }
+  return tagCommit;
+}
+
+/**
+ * @param {{
+ *   tag: string,
+ *   mainRef?: string,
+ *   execGit?: (args: string[]) => string,
+ * }} input
+ */
+export function verifyReleaseTagIsAncestorOfMain(input) {
+  const mainRef = input.mainRef ?? "refs/heads/main";
+  const tagCommit = verifyReleaseTagPointsAtEmbeddedSha(input);
+  const execGit =
+    input.execGit ??
+    ((args) => execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }));
+  try {
+    execGit(["merge-base", "--is-ancestor", tagCommit, mainRef]);
+  } catch {
+    throw new Error(
+      `Release tag commit ${tagCommit} is not an ancestor of ${mainRef}; refusing redeploy.`,
+    );
+  }
+}
+
+/**
  * @param {string[]} argv
  * @returns {number}
  */
 export function runValidateReleaseTagCli(argv = process.argv.slice(2)) {
   try {
-    assertValidReleaseTag(argv[0] ?? "");
+    const verifyOnMain = argv[0] === "--verify-on-main";
+    const tag = verifyOnMain ? (argv[1] ?? "") : (argv[0] ?? "");
+    assertValidReleaseTag(tag);
+    if (verifyOnMain) {
+      verifyReleaseTagIsAncestorOfMain({ tag });
+    }
     return 0;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

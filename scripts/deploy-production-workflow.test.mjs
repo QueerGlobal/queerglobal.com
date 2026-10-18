@@ -70,8 +70,10 @@ describe("deploy-production redeploy_release_tag job", () => {
 
   it("checks out the release tag only after validation", () => {
     const validateIdx = stepIndex(job, "Validate release tag prefix");
+    const verifyIdx = stepIndex(job, "Verify release tag commit is on main");
     const tagCheckoutIdx = stepIndex(job, "Checkout release tag");
-    assert.ok(validateIdx < tagCheckoutIdx, "tag checkout must follow validation");
+    assert.ok(validateIdx < verifyIdx, "git verify must follow prefix validation");
+    assert.ok(verifyIdx < tagCheckoutIdx, "tag checkout must follow git verify");
   });
 });
 

@@ -257,6 +257,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -271,6 +272,11 @@ jobs:
         env:
           ROLLBACK_RELEASE_TAG: ${{ inputs.rollback_release_tag }}
         run: node scripts/validate-release-tag.mjs "$ROLLBACK_RELEASE_TAG"
+
+      - name: Verify release tag commit is on main
+        env:
+          ROLLBACK_RELEASE_TAG: ${{ inputs.rollback_release_tag }}
+        run: node scripts/validate-release-tag.mjs --verify-on-main "$ROLLBACK_RELEASE_TAG"
 
       - name: Checkout release tag
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
