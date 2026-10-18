@@ -51,6 +51,9 @@ jobs:
       - name: Capture current Worker version
         run: doppler run -- node scripts/capture-worker-version.mjs .previous-worker-version
 
+      - name: Ensure OpenTofu state bucket
+        run: doppler run -- node scripts/ensure-tf-state-bucket.mjs
+
       - name: OpenTofu init and apply
         id: apply
         run: |
@@ -119,5 +122,6 @@ jobs:
         uses: DopplerHQ/cli-action@014df23b1329b615816a38eb5f473bb9000700b1 # v3
 
       - name: Roll back Worker
-        run: |
-          doppler run -- node scripts/worker-rollback.mjs "${{ inputs.rollback_version_id }}"
+        env:
+          ROLLBACK_VERSION_ID: ${{ inputs.rollback_version_id }}
+        run: doppler run -- node scripts/worker-rollback.mjs "$ROLLBACK_VERSION_ID"

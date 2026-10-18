@@ -10,5 +10,5 @@ skip_metadata_api_check     = true
 skip_region_validation      = true
 
 # Credentials come from the environment (Doppler in CI), not this file:
-#   AWS_ACCESS_KEY_ID     — R2 access key ID
-#   AWS_SECRET_ACCESS_KEY — R2 secret access key
+#   AWS_ACCESS_KEY_ID     (R2 access key ID)
+#   AWS_SECRET_ACCESS_KEY (R2 secret access key)

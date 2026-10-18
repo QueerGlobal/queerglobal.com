@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Em-dash guard for shipped front-end and docs.
+ * Em-dash guard for repo docs, infra, scripts, and shipped front-end.
  *
  * Reusable in other repos: import the functions below or run this file as a CLI.
  *
@@ -34,6 +34,25 @@ export const DEFAULT_EXTENSIONS = new Set([
 ]);
 
 export const DEFAULT_SKIP_DIR_NAMES = new Set(["archive", "node_modules", ".git"]);
+
+/** Relative paths under the repo root scanned by the default repo guard. */
+export const DEFAULT_SCAN_RELATIVE_PATHS = [
+  "README.md",
+  "infra",
+  "scripts",
+  "docs",
+  "public",
+  ".github/workflows",
+];
+
+export const DEFAULT_EXTENSIONS_WITH_INFRA = new Set([
+  ...DEFAULT_EXTENSIONS,
+  ".hcl",
+  ".example",
+  ".yml",
+  ".yaml",
+  ".toml",
+]);
 
 /**
  * @param {string} text
@@ -98,14 +117,45 @@ function collectFiles(dir, relativePrefix, extensions, skipDirNames) {
  * @param {{
  *   extensions?: Set<string>,
  *   skipDirNames?: Set<string>,
+ *   scanRelativePaths?: string[],
+ *   fullTree?: boolean,
  * }} [options]
  * @returns {EmDashHit[]}
  */
 export function scanForEmDash(rootDir, options = {}) {
-  const extensions = options.extensions ?? DEFAULT_EXTENSIONS;
+  const extensions = options.extensions ?? DEFAULT_EXTENSIONS_WITH_INFRA;
   const skipDirNames = options.skipDirNames ?? DEFAULT_SKIP_DIR_NAMES;
   const absRoot = path.resolve(rootDir);
-  const relFiles = collectFiles(absRoot, "", extensions, skipDirNames);
+
+  /** @type {string[]} */
+  let relFiles = [];
+  if (options.fullTree) {
+    relFiles = collectFiles(absRoot, "", extensions, skipDirNames);
+  } else {
+    const scanRelativePaths = options.scanRelativePaths ?? DEFAULT_SCAN_RELATIVE_PATHS;
+    const seen = new Set();
+    for (const relPath of scanRelativePaths) {
+      const abs = path.join(absRoot, relPath);
+      if (!fs.existsSync(abs)) {
+        continue;
+      }
+      const stat = fs.statSync(abs);
+      if (stat.isFile()) {
+        const ext = path.extname(relPath).toLowerCase();
+        if (extensions.has(ext)) {
+          seen.add(relPath);
+        }
+        continue;
+      }
+      if (stat.isDirectory()) {
+        for (const rel of collectFiles(abs, relPath, extensions, skipDirNames)) {
+          seen.add(rel);
+        }
+      }
+    }
+    relFiles = [...seen].sort();
+  }
+
   /** @type {EmDashHit[]} */
   const allHits = [];
 
@@ -131,7 +181,7 @@ export function formatEmDashReport(hits) {
     (h) => `${h.file}:${h.line}:${h.column}: em dash (U+2014) in …${h.snippet}…`,
   );
   return [
-    "Em dash (U+2014) is not allowed in shipped HTML, CSS, JS, or Markdown (archive/ excluded).",
+    "Em dash (U+2014) is not allowed in README, infra/, scripts/, docs/, public/, or workflow files (archive/ excluded).",
     "Use plain punctuation (comma, period, colon, or parentheses) instead.",
     "",
     ...lines,

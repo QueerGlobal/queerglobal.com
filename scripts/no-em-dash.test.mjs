@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 
 import {
+  DEFAULT_EXTENSIONS,
   EM_DASH,
   findEmDashLocations,
   formatEmDashReport,
@@ -37,7 +38,7 @@ describe("scanForEmDash", () => {
       fs.writeFileSync(path.join(tmp, "archive", "old.html"), "old" + EM_DASH);
       fs.writeFileSync(path.join(tmp, "skip.txt"), EM_DASH);
 
-      const hits = scanForEmDash(tmp);
+      const hits = scanForEmDash(tmp, { fullTree: true, extensions: DEFAULT_EXTENSIONS });
       assert.equal(hits.length, 1);
       assert.equal(hits[0].file, "bad.md");
     } finally {
@@ -51,7 +52,7 @@ describe("runNoEmDashCheck", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "no-em-dash-clean-"));
     try {
       fs.writeFileSync(path.join(tmp, "page.html"), "<title>ok</title>");
-      assert.equal(runNoEmDashCheck(tmp), 0);
+      assert.equal(runNoEmDashCheck(tmp, { fullTree: true, extensions: DEFAULT_EXTENSIONS }), 0);
     } finally {
       fs.rmSync(tmp, { recursive: true, force: true });
     }
@@ -61,8 +62,10 @@ describe("runNoEmDashCheck", () => {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "no-em-dash-fail-"));
     try {
       fs.writeFileSync(path.join(tmp, "x.css"), "/* " + EM_DASH + " */");
-      assert.equal(runNoEmDashCheck(tmp), 1);
-      const report = formatEmDashReport(scanForEmDash(tmp));
+      assert.equal(runNoEmDashCheck(tmp, { fullTree: true, extensions: DEFAULT_EXTENSIONS }), 1);
+      const report = formatEmDashReport(
+        scanForEmDash(tmp, { fullTree: true, extensions: DEFAULT_EXTENSIONS }),
+      );
       assert.match(report, /x\.css:1:4/);
       assert.match(report, /U\+2014/);
     } finally {

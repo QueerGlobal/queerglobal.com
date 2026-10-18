@@ -29,7 +29,8 @@ Optional OpenTofu variables (defaults in `variables.tf`):
 
 ## Remote state (Cloudflare R2)
 
-State is stored remotely so CI and operators share one source of truth.
+State is stored remotely so GitHub Actions and anyone running deploys use the
+same state file.
 
 **Doppler (production config)** should define:
 
@@ -42,7 +43,9 @@ State is stored remotely so CI and operators share one source of truth.
 5. `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`: R2 API token with
    read/write on that bucket (Cloudflare dashboard: R2, Manage R2 API Tokens).
 
-**One-time bucket creation** (idempotent):
+**Bucket creation:** the GitHub deploy workflow runs
+`scripts/ensure-tf-state-bucket.mjs` before `tofu init` (idempotent). To run
+the same step locally:
 
 ```bash
 npm install

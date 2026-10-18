@@ -6,6 +6,9 @@
  * @exports {getLatestDeploymentVersionId} getLatestDeploymentVersionId
  * @exports {deployWorkerVersion} deployWorkerVersion
  * @exports {rollbackWorkerToVersion} rollbackWorkerToVersion
+ * @exports {WORKER_VERSION_ID_PATTERN} WORKER_VERSION_ID_PATTERN
+ * @exports {isValidWorkerVersionId} isValidWorkerVersionId
+ * @exports {assertValidWorkerVersionId} assertValidWorkerVersionId
  * @exports {runRollbackCli} runRollbackCli
  */
 
@@ -13,6 +16,31 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const API_BASE = "https://api.cloudflare.com/client/v4";
+
+/** Cloudflare Workers version IDs are UUIDs. */
+export const WORKER_VERSION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * @param {string} versionId
+ * @returns {boolean}
+ */
+export function isValidWorkerVersionId(versionId) {
+  return WORKER_VERSION_ID_PATTERN.test(versionId);
+}
+
+/**
+ * @param {string} versionId
+ * @returns {string}
+ */
+export function assertValidWorkerVersionId(versionId) {
+  if (!isValidWorkerVersionId(versionId)) {
+    throw new Error(
+      `Invalid Worker version ID (expected UUID format): ${JSON.stringify(versionId)}`,
+    );
+  }
+  return versionId;
+}
 
 /** Marker written when no Worker existed before deploy (first production release). */
 export const NO_PREVIOUS_WORKER_VERSION = "__NO_PREVIOUS_WORKER__";
@@ -124,6 +152,7 @@ export async function rollbackWorkerToVersion(
   apiToken,
   options = {},
 ) {
+  assertValidWorkerVersionId(versionId);
   return deployWorkerVersion(accountId, scriptName, versionId, apiToken, options);
 }
 
@@ -141,6 +170,14 @@ export async function runRollbackCli(argv = process.argv.slice(2)) {
     console.error(
       "Usage: WORKER_NAME=queerglobal-grandkru CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... node scripts/worker-rollback.mjs <version_id>",
     );
+    return 1;
+  }
+
+  try {
+    assertValidWorkerVersionId(versionId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(message);
     return 1;
   }
 

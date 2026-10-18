@@ -13,20 +13,39 @@ import { fileURLToPath } from "node:url";
 
 /**
  * @param {string} message
+ * @param {string} bucketName
  * @returns {boolean}
  */
-function isAlreadyExistsMessage(message) {
-  return /already exists|bucket already owned|409/i.test(message);
+export function isR2BucketAlreadyExistsMessage(message, bucketName) {
+  const normalized = message.toLowerCase();
+  const bucket = bucketName.toLowerCase();
+  if (!normalized.includes(bucket)) {
+    return false;
+  }
+  return (
+    /a bucket with (?:that|this) name already exists/.test(normalized) ||
+    /bucket already exists/.test(normalized) ||
+    /you already own a bucket with this name/.test(normalized)
+  );
 }
 
 /**
- * @param {{ bucketName?: string, accountId?: string, apiToken?: string }} [options]
+ * @param {{
+ *   bucketName?: string,
+ *   accountId?: string,
+ *   apiToken?: string,
+ *   spawnImpl?: typeof spawnSync,
+ *   wranglerBin?: string,
+ * }} [options]
  * @returns {{ created: boolean, skipped: boolean, output: string }}
  */
 export function ensureTfStateBucket(options = {}) {
   const bucketName = options.bucketName ?? process.env.TF_STATE_BUCKET;
   const accountId = options.accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID;
   const apiToken = options.apiToken ?? process.env.CLOUDFLARE_API_TOKEN;
+  const spawnImpl = options.spawnImpl ?? spawnSync;
+  const wranglerBin =
+    options.wranglerBin ?? path.join(process.cwd(), "node_modules", ".bin", "wrangler");
 
   if (!bucketName || !accountId || !apiToken) {
     throw new Error(
@@ -34,8 +53,7 @@ export function ensureTfStateBucket(options = {}) {
     );
   }
 
-  const wranglerBin = path.join(process.cwd(), "node_modules", ".bin", "wrangler");
-  const result = spawnSync(
+  const result = spawnImpl(
     wranglerBin,
     ["r2", "bucket", "create", bucketName],
     {
@@ -52,7 +70,7 @@ export function ensureTfStateBucket(options = {}) {
   if (result.status === 0) {
     return { created: true, skipped: false, output };
   }
-  if (isAlreadyExistsMessage(output)) {
+  if (isR2BucketAlreadyExistsMessage(output, bucketName)) {
     return { created: false, skipped: true, output };
   }
 

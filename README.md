@@ -94,8 +94,8 @@ deploy (or skips rollback on the first deploy when no prior Worker existed).
 
 ### OpenTofu remote state (R2)
 
-Production deploys store state in a single remote bucket so CI and operators
-share one source of truth. Configure these in Doppler (synced to the GitHub
+Production deploys store state in a single remote bucket so GitHub Actions and
+anyone running deploys use the same state file. Configure these in Doppler (synced to the GitHub
 `production` environment); the deploy workflow passes them to OpenTofu init:
 
 | Variable | Purpose |
@@ -107,15 +107,17 @@ share one source of truth. Configure these in Doppler (synced to the GitHub
 | `AWS_ACCESS_KEY_ID` | R2 access key ID (S3-compatible API) |
 | `AWS_SECRET_ACCESS_KEY` | R2 secret access key |
 
-Create the bucket once (idempotent):
+The deploy workflow runs `scripts/ensure-tf-state-bucket.mjs` before OpenTofu
+init to create the R2 bucket when needed (idempotent). To create it ahead of
+time from a workstation:
 
 ```bash
 doppler run -- node scripts/ensure-tf-state-bucket.mjs
 ```
 
-That is the only manual infrastructure step besides Doppler secrets and GitHub
-environment approval. See [infra/README.md](infra/README.md) for backend.hcl
-details.
+Besides Doppler secrets and GitHub environment approval, no other manual
+infrastructure steps are required. See [infra/README.md](infra/README.md) for
+backend.hcl details.
 
 Break-glass manual apply (when CI is unavailable): see [infra/README.md](infra/README.md).
 
