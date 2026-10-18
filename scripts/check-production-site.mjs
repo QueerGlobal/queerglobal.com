@@ -6,6 +6,8 @@
  * @exports {number} EXPECTED_HTTP_STATUS - Required successful HTTP status (200).
  * @exports {htmlContainsTitle} htmlContainsTitle - Test whether HTML includes the title text.
  * @exports {checkComingSoonProduction} checkComingSoonProduction - Fetch URL and validate status + title.
+ * @exports {checkComingSoonProductionWithRetries} checkComingSoonProductionWithRetries - Retry until success or budget exhausted.
+ * @exports {parseRetryConfigFromEnv} parseRetryConfigFromEnv - Read retry settings from environment variables.
  * @exports {runComingSoonCheck} runComingSoonCheck - CLI helper; returns process exit code.
  */
 
@@ -19,6 +21,58 @@ export const EXPECTED_COMING_SOON_TITLE = "Queer Global: coming soon";
 export const EXPECTED_HTTP_STATUS = 200;
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_TOTAL_MS = 300_000;
+const DEFAULT_INITIAL_DELAY_MS = 5_000;
+const DEFAULT_MAX_DELAY_MS = 30_000;
+const DEFAULT_BACKOFF_MULTIPLIER = 1.5;
+
+/**
+ * @param {NodeJS.ProcessEnv} [env]
+ * @returns {{
+ *   maxTotalMs: number,
+ *   initialDelayMs: number,
+ *   maxDelayMs: number,
+ *   backoffMultiplier: number,
+ * }}
+ */
+export function parseRetryConfigFromEnv(env = process.env) {
+  const readInt = (key, fallback) => {
+    const raw = env[key];
+    if (raw === undefined || raw === "") {
+      return fallback;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      throw new Error(`${key} must be a non-negative integer, got ${raw}`);
+    }
+    return parsed;
+  };
+
+  const readFloat = (key, fallback) => {
+    const raw = env[key];
+    if (raw === undefined || raw === "") {
+      return fallback;
+    }
+    const parsed = Number.parseFloat(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new Error(`${key} must be a positive number, got ${raw}`);
+    }
+    return parsed;
+  };
+
+  return {
+    maxTotalMs: readInt("CHECK_PRODUCTION_MAX_TOTAL_MS", DEFAULT_MAX_TOTAL_MS),
+    initialDelayMs: readInt(
+      "CHECK_PRODUCTION_INITIAL_DELAY_MS",
+      DEFAULT_INITIAL_DELAY_MS,
+    ),
+    maxDelayMs: readInt("CHECK_PRODUCTION_MAX_DELAY_MS", DEFAULT_MAX_DELAY_MS),
+    backoffMultiplier: readFloat(
+      "CHECK_PRODUCTION_BACKOFF_MULTIPLIER",
+      DEFAULT_BACKOFF_MULTIPLIER,
+    ),
+  };
+}
 
 /**
  * @param {string} html
@@ -89,12 +143,103 @@ export async function checkComingSoonProduction(url, options = {}) {
 }
 
 /**
+ * @param {string} url
+ * @param {{
+ *   expectedTitle?: string,
+ *   expectedStatus?: number,
+ *   fetchImpl?: typeof fetch,
+ *   timeoutMs?: number,
+ *   maxTotalMs?: number,
+ *   initialDelayMs?: number,
+ *   maxDelayMs?: number,
+ *   backoffMultiplier?: number,
+ *   sleepFn?: (ms: number) => Promise<void>,
+ *   logFn?: (entry: Record<string, unknown>) => void,
+ *   nowFn?: () => number,
+ * }} [options]
+ * @returns {Promise<ComingSoonOk | ComingSoonFail>}
+ */
+export async function checkComingSoonProductionWithRetries(url, options = {}) {
+  const envRetry = parseRetryConfigFromEnv();
+  const maxTotalMs = options.maxTotalMs ?? envRetry.maxTotalMs;
+  const initialDelayMs = options.initialDelayMs ?? envRetry.initialDelayMs;
+  const maxDelayMs = options.maxDelayMs ?? envRetry.maxDelayMs;
+  const backoffMultiplier = options.backoffMultiplier ?? envRetry.backoffMultiplier;
+  const sleepFn =
+    options.sleepFn ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  const logFn = options.logFn ?? ((entry) => console.log(JSON.stringify(entry)));
+  const nowFn = options.nowFn ?? (() => Date.now());
+
+  const startedAtMs = nowFn();
+  let attempt = 0;
+  let delayMs = initialDelayMs;
+  /** @type {ComingSoonOk | ComingSoonFail | undefined} */
+  let lastResult;
+
+  while (true) {
+    attempt += 1;
+    const attemptStartedAtMs = nowFn();
+    lastResult = await checkComingSoonProduction(url, options);
+
+    logFn({
+      event: "production_smoke_check_attempt",
+      url,
+      attempt,
+      ok: lastResult.ok,
+      httpStatus: lastResult.status,
+      error: lastResult.ok ? undefined : lastResult.error,
+      elapsedMs: attemptStartedAtMs - startedAtMs,
+    });
+
+    if (lastResult.ok) {
+      return lastResult;
+    }
+
+    const elapsedMs = nowFn() - startedAtMs;
+    if (elapsedMs >= maxTotalMs) {
+      logFn({
+        event: "production_smoke_check_exhausted",
+        url,
+        attempts: attempt,
+        maxTotalMs,
+        lastError: lastResult.error,
+      });
+      return lastResult;
+    }
+
+    const remainingMs = maxTotalMs - elapsedMs;
+    const waitMs = Math.min(delayMs, remainingMs);
+    if (waitMs <= 0) {
+      logFn({
+        event: "production_smoke_check_exhausted",
+        url,
+        attempts: attempt,
+        maxTotalMs,
+        lastError: lastResult.error,
+      });
+      return lastResult;
+    }
+
+    logFn({
+      event: "production_smoke_check_backoff",
+      url,
+      attempt,
+      waitMs,
+      nextAttempt: attempt + 1,
+    });
+
+    await sleepFn(waitMs);
+    delayMs = Math.min(Math.ceil(delayMs * backoffMultiplier), maxDelayMs);
+  }
+}
+
+/**
  * @param {string[]} argv
  * @returns {Promise<number>}
  */
 export async function runComingSoonCheck(argv = process.argv.slice(2)) {
   const url = argv[0] ?? "https://queerglobal.grandkru.com";
-  const result = await checkComingSoonProduction(url);
+  const result = await checkComingSoonProductionWithRetries(url);
   if (result.ok) {
     console.log(`OK ${url} returned ${result.status} with expected title.`);
     return 0;

@@ -14,6 +14,22 @@ import { fileURLToPath } from "node:url";
 
 const API_BASE = "https://api.cloudflare.com/client/v4";
 
+/** Marker written when no Worker existed before deploy (first production release). */
+export const NO_PREVIOUS_WORKER_VERSION = "__NO_PREVIOUS_WORKER__";
+
+/**
+ * @param {Response} response
+ * @param {{ success?: boolean, errors?: Array<{ message?: string, code?: number }> }} payload
+ * @returns {boolean}
+ */
+export function isWorkerScriptNotFound(response, payload) {
+  const msg = payload.errors?.[0]?.message ?? response.statusText ?? "";
+  if (response.status === 404) {
+    return true;
+  }
+  return /script not found/i.test(msg);
+}
+
 /**
  * @param {string} accountId
  * @param {string} scriptName
@@ -38,6 +54,9 @@ export async function listWorkerDeployments(
   });
   const payload = await response.json();
   if (!response.ok || !payload.success) {
+    if (isWorkerScriptNotFound(response, payload)) {
+      return [];
+    }
     const msg = payload.errors?.[0]?.message ?? response.statusText;
     throw new Error(`List deployments failed: ${msg}`);
   }

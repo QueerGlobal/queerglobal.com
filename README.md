@@ -46,7 +46,9 @@ to the GitHub `production` environment (see [infra/README.md](infra/README.md)):
 | `CLOUDFLARE_API_TOKEN` | OpenTofu provider and rollback API calls |
 | `CLOUDFLARE_ACCOUNT_ID` | Account for Workers and custom domain |
 | `TF_VAR_cloudflare_account_id` | Same value as `CLOUDFLARE_ACCOUNT_ID` for OpenTofu |
-| `TF_STATE_BUCKET`, `TF_STATE_KEY`, `TF_STATE_REGION` | Remote OpenTofu state (S3) |
+| `TF_STATE_BUCKET`, `TF_STATE_KEY`, `TF_STATE_REGION` | Remote OpenTofu state bucket and object key |
+| `TF_STATE_ENDPOINT` | S3 API endpoint (required for Cloudflare R2) |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | R2 (or S3) credentials for the state backend |
 
 The Cloudflare account ID and workers.dev subdomain name are intentionally
 omitted from committed files. They may still appear in older git history.
@@ -60,11 +62,13 @@ requires:
 - HTML containing the document title **`Queer Global: coming soon`**
 
 The same check is implemented in `scripts/check-production-site.mjs` (`npm run
-check:coming-soon`). If the smoke test fails after a successful OpenTofu
-apply, the workflow rolls back the Worker to the version captured immediately
-before deploy.
+check:coming-soon`). It retries with backoff for about five minutes (configurable
+via `CHECK_PRODUCTION_*` env vars) so TLS on a new custom domain can finish
+provisioning. If the smoke test still fails after a successful OpenTofu apply,
+the workflow rolls back the Worker to the version captured immediately before
+deploy (or skips rollback on the first deploy when no prior Worker existed).
 
-### Operator notes
+### Notes for running this
 
 1. **OpenTofu** creates the Worker (static assets from `public/`) and the
    `queerglobal.grandkru.com` custom domain on the `grandkru.com` zone. Do
@@ -87,6 +91,31 @@ before deploy.
 
 4. Do **not** point `queerglobal.com` or `www.queerglobal.com` at this
    Worker. Do **not** add `/queerglobal` on `activism-grandkru-hub`.
+
+### OpenTofu remote state (R2)
+
+Production deploys store state in a single remote bucket so CI and operators
+share one source of truth. Configure these in Doppler (synced to the GitHub
+`production` environment); the deploy workflow passes them to OpenTofu init:
+
+| Variable | Purpose |
+|----------|---------|
+| `TF_STATE_BUCKET` | Bucket name (for example an R2 bucket in Grand Kru Cloudflare) |
+| `TF_STATE_KEY` | State object key (default `queerglobal-grandkru/terraform.tfstate`) |
+| `TF_STATE_REGION` | Backend region (`auto` for R2) |
+| `TF_STATE_ENDPOINT` | R2 S3 endpoint: `https://<CLOUDFLARE_ACCOUNT_ID>.r2.cloudflarestorage.com` |
+| `AWS_ACCESS_KEY_ID` | R2 access key ID (S3-compatible API) |
+| `AWS_SECRET_ACCESS_KEY` | R2 secret access key |
+
+Create the bucket once (idempotent):
+
+```bash
+doppler run -- node scripts/ensure-tf-state-bucket.mjs
+```
+
+That is the only manual infrastructure step besides Doppler secrets and GitHub
+environment approval. See [infra/README.md](infra/README.md) for backend.hcl
+details.
 
 Break-glass manual apply (when CI is unavailable): see [infra/README.md](infra/README.md).
 

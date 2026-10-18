@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import {
   getLatestDeploymentVersionId,
   listWorkerDeployments,
+  NO_PREVIOUS_WORKER_VERSION,
 } from "./worker-rollback.mjs";
 
 /**
@@ -13,6 +14,7 @@ import {
  *   apiToken?: string,
  *   scriptName?: string,
  *   outputPath?: string,
+ *   fetchImpl?: typeof fetch,
  * }} [options]
  * @returns {Promise<string | null>}
  */
@@ -25,10 +27,20 @@ export async function captureWorkerVersionId(options = {}) {
     throw new Error("CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN are required.");
   }
 
-  const deployments = await listWorkerDeployments(accountId, scriptName, apiToken);
+  const deployments = await listWorkerDeployments(accountId, scriptName, apiToken, {
+    fetchImpl: options.fetchImpl,
+  });
   const versionId = getLatestDeploymentVersionId(deployments);
-  if (options.outputPath && versionId) {
-    fs.writeFileSync(options.outputPath, `${versionId}\n`, "utf8");
+  if (options.outputPath) {
+    if (versionId) {
+      fs.writeFileSync(options.outputPath, `${versionId}\n`, "utf8");
+    } else {
+      fs.writeFileSync(
+        options.outputPath,
+        `${NO_PREVIOUS_WORKER_VERSION}\n`,
+        "utf8",
+      );
+    }
   }
   return versionId;
 }
