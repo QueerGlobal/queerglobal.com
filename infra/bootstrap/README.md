@@ -13,7 +13,7 @@ not use the R2 bucket it creates for its own state.
 
 ## State encryption and passphrase
 
-OpenTofu 1.7+ encrypts bootstrap state and plan files with PBKDF2 + AES-GCM. Provide a
+OpenTofu 1.8+ encrypts bootstrap state and plan files with PBKDF2 + AES-GCM. Provide a
 passphrase via environment variable (never commit it):
 
 ```bash
