@@ -38,6 +38,35 @@ variable "doppler_token" {
   sensitive   = true
 }
 
+variable "doppler_management_token" {
+  type        = string
+  description = "Doppler personal/team token with write access (Terraform doppler provider)."
+  sensitive   = true
+}
+
+variable "doppler_project" {
+  type        = string
+  description = "Doppler project slug for production secrets."
+}
+
+variable "doppler_config" {
+  type        = string
+  description = "Doppler config slug (for example prd)."
+  default     = "prd"
+}
+
+variable "deploy_api_token_name" {
+  type        = string
+  description = "Cloudflare API token name for deploys (Workers only, no R2)."
+  default     = "queerglobal-grandkru-deploy"
+}
+
+variable "tf_state_object_key" {
+  type        = string
+  description = "OpenTofu state object key for the main stack."
+  default     = "queerglobal-grandkru/terraform.tfstate"
+}
+
 variable "tf_state_bucket_name" {
   type        = string
   description = "R2 bucket name for OpenTofu remote state."

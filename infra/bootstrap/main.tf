@@ -8,8 +8,31 @@ data "cloudflare_account_api_token_permission_groups_list" "r2_bucket_item_write
   name       = "Workers R2 Storage Bucket Item Write"
 }
 
+data "cloudflare_account_api_token_permission_groups_list" "workers_scripts_write" {
+  account_id = var.cloudflare_account_id
+  name       = "Workers Scripts Write"
+}
+
+data "cloudflare_account_api_token_permission_groups_list" "workers_routes_write" {
+  account_id = var.cloudflare_account_id
+  name       = "Workers Routes Write"
+}
+
+data "cloudflare_account_api_token_permission_groups_list" "zone_read" {
+  account_id = var.cloudflare_account_id
+  name       = "Zone Read"
+}
+
+data "cloudflare_account_api_token_permission_groups_list" "dns_write" {
+  account_id = var.cloudflare_account_id
+  name       = "DNS Write"
+}
+
 locals {
-  r2_bucket_resource = "com.cloudflare.edge.r2.bucket.${var.cloudflare_account_id}_default_${var.tf_state_bucket_name}"
+  r2_bucket_resource      = "com.cloudflare.edge.r2.bucket.${var.cloudflare_account_id}_default_${var.tf_state_bucket_name}"
+  deploy_account_resource = "com.cloudflare.api.account.${var.cloudflare_account_id}"
+  tf_state_endpoint       = "https://${var.cloudflare_account_id}.r2.cloudflarestorage.com"
+  r2_secret_access_key    = sha256(cloudflare_account_token.tf_state_r2.value)
 }
 
 resource "cloudflare_r2_bucket" "tf_state" {
@@ -29,6 +52,24 @@ resource "cloudflare_account_token" "tf_state_r2" {
     ]
     resources = jsonencode({
       (local.r2_bucket_resource) = "*"
+    })
+  }]
+}
+
+resource "cloudflare_account_token" "deploy_workers" {
+  name       = var.deploy_api_token_name
+  account_id = var.cloudflare_account_id
+
+  policies = [{
+    effect = "allow"
+    permission_groups = [
+      { id = data.cloudflare_account_api_token_permission_groups_list.workers_scripts_write.result[0].id },
+      { id = data.cloudflare_account_api_token_permission_groups_list.workers_routes_write.result[0].id },
+      { id = data.cloudflare_account_api_token_permission_groups_list.zone_read.result[0].id },
+      { id = data.cloudflare_account_api_token_permission_groups_list.dns_write.result[0].id },
+    ]
+    resources = jsonencode({
+      (local.deploy_account_resource) = "*"
     })
   }]
 }

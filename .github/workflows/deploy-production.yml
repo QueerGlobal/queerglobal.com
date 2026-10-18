@@ -11,7 +11,7 @@ on:
         required: false
         type: string
       rollback_release_tag:
-        description: Git release tag to redeploy (OpenTofu apply from that tag)
+        description: Git release tag to redeploy (must start with release/)
         required: false
         type: string
 
@@ -66,7 +66,6 @@ jobs:
     environment: production
     permissions:
       contents: write
-      administration: read
     env:
       DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
     steps:
@@ -99,17 +98,18 @@ jobs:
 
       - name: Capture current Worker version
         run: |
-          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,WORKER_NAME -- \
+          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- \
             node scripts/capture-worker-version.mjs .previous-worker-version
 
       - name: OpenTofu init, plan, and apply
         id: apply
         run: |
-          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
+          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
             bash -ec '
             test -n "$CLOUDFLARE_API_TOKEN"
             test -n "$CLOUDFLARE_ACCOUNT_ID"
             test -n "$TF_STATE_BUCKET"
+            test -n "$TF_STATE_ENDPOINT"
             test -n "$AWS_ACCESS_KEY_ID"
             test -n "$AWS_SECRET_ACCESS_KEY"
             export TF_VAR_cloudflare_account_id="$CLOUDFLARE_ACCOUNT_ID"
@@ -119,14 +119,12 @@ jobs:
             fi
             {
               echo "bucket = \"$TF_STATE_BUCKET\""
-              echo "key = \"${TF_STATE_KEY:-queerglobal-grandkru/terraform.tfstate}\""
-              echo "region = \"${TF_STATE_REGION:-auto}\""
-              if [ -n "${TF_STATE_ENDPOINT:-}" ]; then
-                echo "endpoint = \"$TF_STATE_ENDPOINT\""
-                echo "skip_credentials_validation = true"
-                echo "skip_metadata_api_check = true"
-                echo "skip_region_validation = true"
-              fi
+              echo "key = \"queerglobal-grandkru/terraform.tfstate\""
+              echo "region = \"auto\""
+              echo "endpoint = \"$TF_STATE_ENDPOINT\""
+              echo "skip_credentials_validation = true"
+              echo "skip_metadata_api_check = true"
+              echo "skip_region_validation = true"
             } > /tmp/backend.hcl
             tofu -chdir=infra init -backend-config=/tmp/backend.hcl
             tofu -chdir=infra plan -out=/tmp/tfplan
@@ -137,17 +135,6 @@ jobs:
         id: smoke
         run: node scripts/check-production-site.mjs https://queerglobal.grandkru.com
 
-      - name: Tag release
-        if: success()
-        env:
-          RELEASE_TAG: release/${{ github.run_number }}-${{ github.sha }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.name "Mark Nyon"
-          git config user.email "mnyon-grandkru@users.noreply.github.com"
-          git tag "$RELEASE_TAG"
-          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$RELEASE_TAG"
-
       - name: Wait and recheck production (15 minutes)
         id: recheck
         if: success()
@@ -157,6 +144,17 @@ jobs:
           node scripts/check-production-site.mjs https://queerglobal.grandkru.com
           node scripts/check-activism-unchanged.mjs https://activism.grandkru.com
 
+      - name: Tag release
+        if: success() && steps.recheck.outcome == 'success'
+        env:
+          RELEASE_TAG: release/${{ github.run_number }}-${{ github.sha }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "Mark Nyon"
+          git config user.email "mnyon-grandkru@users.noreply.github.com"
+          git tag "$RELEASE_TAG"
+          git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$RELEASE_TAG"
+
       - name: Roll back Worker on smoke or recheck failure
         if: failure() && steps.apply.outcome == 'success' && (steps.smoke.outcome == 'failure' || steps.recheck.outcome == 'failure')
         run: |
@@ -165,8 +163,8 @@ jobs:
             echo "No previous Worker version (first deploy); skip Worker rollback."
             echo "First-deploy break-glass: doppler run -- tofu -chdir=infra destroy -target=cloudflare_workers_custom_domain.coming_soon -target=cloudflare_workers_script.coming_soon"
           else
-            doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,WORKER_NAME -- \
-              node scripts/worker-rollback.mjs "$PREVIOUS"
+            doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- \
+              env WORKER_NAME=queerglobal-grandkru node scripts/worker-rollback.mjs "$PREVIOUS"
           fi
 
   rollback:
@@ -197,18 +195,23 @@ jobs:
         env:
           ROLLBACK_VERSION_ID: ${{ inputs.rollback_version_id }}
         run: |
-          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,WORKER_NAME -- \
-            node scripts/worker-rollback.mjs "$ROLLBACK_VERSION_ID"
+          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID -- \
+            env WORKER_NAME=queerglobal-grandkru node scripts/worker-rollback.mjs "$ROLLBACK_VERSION_ID"
 
   redeploy_release_tag:
     if: github.event_name == 'workflow_dispatch' && inputs.rollback_release_tag != ''
     runs-on: ubuntu-latest
     environment: production
     permissions:
-      administration: read
+      contents: read
     env:
       DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN }}
     steps:
+      - name: Validate release tag prefix
+        env:
+          ROLLBACK_RELEASE_TAG: ${{ inputs.rollback_release_tag }}
+        run: node scripts/validate-release-tag.mjs "$ROLLBACK_RELEASE_TAG"
+
       - name: Checkout release tag
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -219,6 +222,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/verify-production-environment.mjs
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
 
       - name: Setup OpenTofu
         uses: opentofu/setup-opentofu@9d84900f3238fab8cd84ce47d658d25dd008be2f # v1
@@ -232,23 +244,27 @@ jobs:
         env:
           ROLLBACK_RELEASE_TAG: ${{ inputs.rollback_release_tag }}
         run: |
-          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_KEY,TF_STATE_REGION,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
+          doppler run --only-secrets CLOUDFLARE_API_TOKEN,CLOUDFLARE_ACCOUNT_ID,TF_STATE_BUCKET,TF_STATE_ENDPOINT,AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY -- \
             bash -ec '
             export TF_VAR_cloudflare_account_id="$CLOUDFLARE_ACCOUNT_ID"
             export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
             {
               echo "bucket = \"$TF_STATE_BUCKET\""
-              echo "key = \"${TF_STATE_KEY:-queerglobal-grandkru/terraform.tfstate}\""
-              echo "region = \"${TF_STATE_REGION:-auto}\""
-              if [ -n "${TF_STATE_ENDPOINT:-}" ]; then
-                echo "endpoint = \"$TF_STATE_ENDPOINT\""
-                echo "skip_credentials_validation = true"
-                echo "skip_metadata_api_check = true"
-                echo "skip_region_validation = true"
-              fi
+              echo "key = \"queerglobal-grandkru/terraform.tfstate\""
+              echo "region = \"auto\""
+              echo "endpoint = \"$TF_STATE_ENDPOINT\""
+              echo "skip_credentials_validation = true"
+              echo "skip_metadata_api_check = true"
+              echo "skip_region_validation = true"
             } > /tmp/backend.hcl
             tofu -chdir=infra init -backend-config=/tmp/backend.hcl
             tofu -chdir=infra plan -out=/tmp/tfplan
             tofu -chdir=infra apply -auto-approve /tmp/tfplan
             echo "Redeployed release tag ${ROLLBACK_RELEASE_TAG}."
           '
+
+      - name: Production smoke test after redeploy
+        run: node scripts/check-production-site.mjs https://queerglobal.grandkru.com
+
+      - name: Activism unchanged check after redeploy
+        run: node scripts/check-activism-unchanged.mjs https://activism.grandkru.com

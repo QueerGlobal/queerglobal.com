@@ -45,13 +45,16 @@ and are fetched at deploy time:
 |---------------------------|---------|
 | `CLOUDFLARE_API_TOKEN` | OpenTofu provider and rollback API calls |
 | `CLOUDFLARE_ACCOUNT_ID` | Account for Workers and custom domain |
-| `TF_STATE_BUCKET`, `TF_STATE_KEY`, `TF_STATE_REGION` | Remote OpenTofu state bucket and object key |
+| `TF_STATE_BUCKET` | Remote OpenTofu state bucket (from bootstrap) |
 | `TF_STATE_ENDPOINT` | S3 API endpoint (required for Cloudflare R2) |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Scoped R2 credentials for state (from bootstrap) |
 
+Bootstrap also writes `TF_STATE_KEY` and `TF_STATE_REGION` to Doppler; CI uses
+the same defaults (`queerglobal-grandkru/terraform.tfstate`, `auto`).
+
 Run [infra/bootstrap](infra/bootstrap/README.md) once before the first merge so
-the protected **production** environment, `DOPPLER_TOKEN`, R2 bucket, and
-scoped R2 token exist.
+the protected **production** environment, `DOPPLER_TOKEN`, R2 bucket, scoped R2
+token, and Workers-only deploy token exist in Doppler.
 
 The Cloudflare account ID and workers.dev subdomain name are intentionally
 omitted from committed files. They may still appear in older git history.

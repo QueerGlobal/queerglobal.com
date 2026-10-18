@@ -7,7 +7,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { EXPECTED_COMING_SOON_TITLE } from "./check-production-site.mjs";
+import { EXPECTED_COMING_SOON_TITLE, EXPECTED_HTTP_STATUS } from "./check-production-site.mjs";
 
 export const DEFAULT_ACTIVISM_URL = "https://activism.grandkru.com";
 
@@ -22,12 +22,17 @@ export function activismHtmlLooksUnchanged(html, forbiddenTitle = EXPECTED_COMIN
 
 /**
  * @param {string} [url]
- * @param {{ fetchImpl?: typeof fetch, forbiddenTitle?: string }} [options]
+ * @param {{
+ *   fetchImpl?: typeof fetch,
+ *   forbiddenTitle?: string,
+ *   expectedStatus?: number,
+ * }} [options]
  * @returns {Promise<{ ok: true } | { ok: false, error: string, status: number | null }>}
  */
 export async function checkActivismUnchanged(url = DEFAULT_ACTIVISM_URL, options = {}) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const forbiddenTitle = options.forbiddenTitle ?? EXPECTED_COMING_SOON_TITLE;
+  const expectedStatus = options.expectedStatus ?? EXPECTED_HTTP_STATUS;
 
   try {
     const response = await fetchImpl(url, {
@@ -35,6 +40,15 @@ export async function checkActivismUnchanged(url = DEFAULT_ACTIVISM_URL, options
       headers: { Accept: "text/html" },
     });
     const body = await response.text();
+
+    if (response.status !== expectedStatus) {
+      return {
+        ok: false,
+        status: response.status,
+        error: `Expected HTTP ${expectedStatus}, got ${response.status}.`,
+      };
+    }
+
     if (!activismHtmlLooksUnchanged(body, forbiddenTitle)) {
       return {
         ok: false,

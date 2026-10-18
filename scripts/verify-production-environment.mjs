@@ -7,6 +7,46 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+/** @typedef {{ type?: string, reviewers?: Array<unknown> }} ProtectionRule */
+
+/**
+ * @param {{ protection_rules?: ProtectionRule[] }} payload
+ * @returns {number}
+ */
+export function countRequiredReviewersFromProtectionRules(payload) {
+  const rules = payload.protection_rules ?? [];
+  let count = 0;
+  for (const rule of rules) {
+    if (rule.type === "required_reviewers" && Array.isArray(rule.reviewers)) {
+      count += rule.reviewers.length;
+    }
+  }
+  return count;
+}
+
+/**
+ * @param {{
+ *   deployment_branch_policy?: {
+ *     protected_branches?: boolean,
+ *     custom_branch_policies?: boolean,
+ *     custom_branch_policy_names?: string[],
+ *   },
+ * }} payload
+ * @param {string} [defaultBranch]
+ * @returns {boolean}
+ */
+export function environmentDeploysFromMainOnly(payload, defaultBranch = "main") {
+  const policy = payload.deployment_branch_policy;
+  if (!policy) {
+    return false;
+  }
+  if (policy.custom_branch_policies === true) {
+    const names = policy.custom_branch_policy_names ?? [];
+    return names.length === 1 && names[0] === defaultBranch;
+  }
+  return policy.protected_branches === true && policy.custom_branch_policies === false;
+}
+
 /**
  * @param {{
  *   owner?: string,
@@ -14,8 +54,9 @@ import { fileURLToPath } from "node:url";
  *   environment?: string,
  *   token?: string,
  *   fetchImpl?: typeof fetch,
+ *   defaultBranch?: string,
  * }} [options]
- * @returns {Promise<{ reviewers: number, protectedBranches: boolean }>}
+ * @returns {Promise<{ reviewers: number, mainOnlyDeploy: boolean }>}
  */
 export async function verifyProductionEnvironmentProtected(options = {}) {
   const repository = process.env.GITHUB_REPOSITORY;
@@ -28,6 +69,7 @@ export async function verifyProductionEnvironmentProtected(options = {}) {
   const environment = options.environment ?? "production";
   const token = options.token ?? process.env.GITHUB_TOKEN;
   const fetchImpl = options.fetchImpl ?? fetch;
+  const defaultBranch = options.defaultBranch ?? "main";
 
   if (!owner || !repo || !token) {
     throw new Error(
@@ -52,10 +94,8 @@ export async function verifyProductionEnvironmentProtected(options = {}) {
     throw new Error(`Failed to load GitHub environment ${environment}: ${message}`);
   }
 
-  const reviewers = Array.isArray(payload.reviewers) ? payload.reviewers.length : 0;
-  const protectedBranches =
-    payload.deployment_branch_policy?.protected_branches === true ||
-    payload.protection_rules?.some((rule) => rule.type === "required_reviewers");
+  const reviewers = countRequiredReviewersFromProtectionRules(payload);
+  const mainOnlyDeploy = environmentDeploysFromMainOnly(payload, defaultBranch);
 
   if (reviewers === 0) {
     throw new Error(
@@ -63,7 +103,13 @@ export async function verifyProductionEnvironmentProtected(options = {}) {
     );
   }
 
-  return { reviewers, protectedBranches };
+  if (!mainOnlyDeploy) {
+    throw new Error(
+      `GitHub environment "${environment}" must deploy from ${defaultBranch} only; refusing to deploy.`,
+    );
+  }
+
+  return { reviewers, mainOnlyDeploy };
 }
 
 /**
@@ -76,7 +122,7 @@ export async function runVerifyProductionEnvironmentCli() {
       JSON.stringify({
         event: "production_environment_verified",
         reviewers: result.reviewers,
-        protectedBranches: result.protectedBranches,
+        mainOnlyDeploy: result.mainOnlyDeploy,
       }),
     );
     return 0;

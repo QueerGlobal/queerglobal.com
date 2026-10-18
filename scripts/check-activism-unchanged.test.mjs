@@ -29,4 +29,13 @@ describe("checkActivismUnchanged", () => {
     const result = await checkActivismUnchanged("https://activism.example", { fetchImpl });
     assert.equal(result.ok, true);
   });
+
+  it("fails when HTTP status is not 200", async () => {
+    const fetchImpl = async () => ({
+      status: 500,
+      text: async () => "<title>Activism hub</title>",
+    });
+    const result = await checkActivismUnchanged("https://activism.example", { fetchImpl });
+    assert.equal(result.ok, false);
+  });
 });

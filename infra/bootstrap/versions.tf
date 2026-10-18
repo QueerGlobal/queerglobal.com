@@ -1,9 +1,8 @@
 terraform {
   required_version = ">= 1.6.0"
 
-  backend "s3" {
-    # Same remote backend as infra/; use key queerglobal-grandkru/bootstrap.tfstate at init.
-  }
+  # Local state only (terraform.tfstate in this directory). Do not store bootstrap
+  # state in the R2 bucket this stack creates.
 
   required_providers {
     cloudflare = {
@@ -13,6 +12,10 @@ terraform {
     github = {
       source  = "integrations/github"
       version = "6.6.0"
+    }
+    doppler = {
+      source  = "DopplerHQ/doppler"
+      version = "1.17.0"
     }
   }
 }
@@ -24,4 +27,8 @@ provider "cloudflare" {
 provider "github" {
   owner = var.github_owner
   token = var.github_token
+}
+
+provider "doppler" {
+  doppler_token = var.doppler_management_token
 }
